@@ -1,0 +1,127 @@
+[project]
+name = "KaDoTe"
+version = "0.1.0"
+description = ""
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "cryptography>=43.0.1",
+    "ids-peak>=1.9.0.0.2",
+    "matplotlib>=3.9.2",
+    "numpy>=2.1.1",
+    "opcua>=0.98.13",
+    "open3d>=0.18.0",
+    "pillow>=10.4.0",
+]
+
+[project.optional-dependencies]
+server = ["keyboard>=0.13.5"]
+
+[tool.uv]
+dev-dependencies = [
+    "mypy>=1.11.2",
+    "ruff>=0.6.3",
+    "types-pillow>=10.2.0.20240822",
+]
+
+[tool.ruff]
+# Assume Python 3.11
+target-version = "py311"
+
+line-length = 100
+
+# Enable preview rules
+preview = true
+# Config related to automatic fixes
+fix = true
+unsafe-fixes = true
+# Gettext function
+builtins = ["_"]
+
+src = ["Client.py", "Server.py"]
+extend-exclude = ["script_OPCUA_Sara.py", "Client_TUC.py"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    # missing-type-self: mypy infers self type 
+    # Rule removed in ruff v0.2.0
+    "ANN101",
+    # missing-type-cls: mypy infers self type 
+    # Rule removed in ruff v0.2.0
+    "ANN102",
+    # undocumented-magic-method: Annoying to document all __str__ etc. overrides
+    "D105",
+    # Disables timezone related warnings. Should probably not be disabled.
+    # https://docs.astral.sh/ruff/rules/#flake8-datetimez-dtz
+    "DTZ",
+    # whitespace-before-punctuation: Handled by formatter
+    "E203",
+    # missing-whitespace-around-arithmetic-operator: Handled by formatter
+    "E226",
+    # missing-todo-author: Not usefull for single person projects
+    "TD002",
+    # missing-todo-link
+    "TD003",
+    # if-exp-instead-of-or-operator: More verbose but more readable
+    "FURB110",
+    # Ignore rules when using formating as per recommendation:
+    # https://docs.astral.sh/ruff/formatter/#conflicting-lint-rules
+    "W191",
+    "E111",
+    "E114",
+    "E117",
+    "D206",
+    "D300",
+    "Q000",
+    "Q001",
+    "Q002",
+    "Q003",
+    "COM812",
+    "COM819",
+    "ISC001",
+    "ISC002",
+    # line-too-long: Handled on best effort basis by formatter
+    "E501",
+    # Documentation for raised exceptions is very incosistent
+    "DOC502",
+]
+extend-safe-fixes = [
+    # non-pep585-annotation: Changes typing.List to list in type annotations. 
+    # We are using python >=3.11 so the fix should be safe.
+    "UP006",
+    # non-pep604-annotation: Changes Union[x,y] to x | y in type annotations
+    # We are using python >=3.11 so the fix should be safe.
+    "UP007",
+]
+# Do not remove print and pprint when fixing
+unfixable = ["T201", "T203"]
+task-tags = ["TODO", "FIXME", "BUG"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+warn_unreachable = true
+plugins = ["numpy.typing.mypy_plugin"]
+exclude = ["script_OPCUA_Sara.py", "Client_TUC.py"]
+# For deamon
+cache_fine_grained = true
+
+[[tool.mypy.overrides]]
+module = [
+    "ids_peak.*",
+    "ids_peak_ipl.*",
+    "matplotlib.*",
+    "opcua.*",
+    "harvesters.*",
+    "open3d.*",
+    "PIL.*",
+]
+ignore_missing_imports = true

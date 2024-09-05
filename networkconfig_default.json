@@ -1,0 +1,147 @@
+{
+  "miscellaneousSettings": {
+    "borderB_mm": 0,
+    "borderL_mm": 0,
+    "borderR_mm": 0,
+    "borderT_mm": 0,
+    "boxLineWidth": 1,
+    "boxTagScale": 1,
+    "counting_edge": 0.0,
+    "debug": false,
+    "displayNetworkNames": false,
+    "divide_images_horizontal": 1,
+    "divide_images_vertical": 1,
+    "edge_h": 0,
+    "edge_h_b": 0,
+    "edge_w": 0,
+    "edge_w_r": 0,
+    "forceDivisor": false,
+    "forceEvalSizeChannels": -1,
+    "forceEvalSizeHeight": -1,
+    "forceEvalSizeWidth": -1,
+    "heatmapHeight": -1,
+    "heatmapWidth": -1,
+    "heatmap_label_id": "-1",
+    "imageHeight_mm": 100,
+    "imageWidth_mm": 100,
+    "keepInputAspectRatio": false,
+    "keepInputAspectRatioPadding": 0,
+    "maximumDefects": 1000,
+    "module_cells_h": 1,
+    "module_cells_w": 1,
+    "network_selection": {
+      "DEFAULT": {}
+    },
+    "overlapThreshold": 100,
+    "preEvaluationCanny": [],
+    "selectiveSegmentationMap": true,
+    "showSegmentations": true,
+    "simplifiedEvaluation": false,
+    "skipClahe": true,
+    "suspendDataCollection": false
+  },
+  "modelInfo": {},
+  "objectDetectionNetwork": {
+    "availableDefectAttributes": [
+      {
+        "attName": "minGrayValue",
+        "attName_CH": "\u6700\u5c0f\u7070\u9636\u503c",
+        "default": 0,
+        "type": "int",
+        "unit": ""
+      },
+      {
+        "attName": "maxMeanGrayValue",
+        "attName_CH": "\u6700\u5927\u5e73\u5747\u7070\u9636\u503c",
+        "default": 255,
+        "type": "int",
+        "unit": ""
+      },
+      {
+        "attName": "maxGrayValue",
+        "attName_CH": "\u6700\u5927\u7070\u9636\u503c",
+        "default": 255,
+        "type": "int",
+        "unit": ""
+      },
+      {
+        "attName": "minProbability",
+        "attName_CH": "\u6700\u5c0f\u673a\u7387\u503c",
+        "default": 0,
+        "type": "float",
+        "unit": "%"
+      },
+      {
+        "attName": "minSegmentationThreshold",
+        "attName_CH": "\u5206\u5272\u95e8\u69db\u503c",
+        "default": 50,
+        "type": "float",
+        "unit": "%"
+      },
+      {
+        "attName": "minLength",
+        "attName_CH": "\u6700\u77ed\u957f\u5ea6",
+        "default": 0,
+        "type": "float",
+        "unit": "mm"
+      },
+      {
+        "attName": "minWidth",
+        "attName_CH": "\u6700\u77ed\u5bbd\u5ea6",
+        "default": 0,
+        "type": "float",
+        "unit": "mm"
+      },
+      {
+        "attName": "minHeight",
+        "attName_CH": "\u6700\u5c0f\u9ad8\u5ea6",
+        "default": 0,
+        "type": "float",
+        "unit": "mm"
+      },
+      {
+        "attName": "minArea",
+        "attName_CH": "\u6700\u5c0f\u9762\u79ef",
+        "default": 0,
+        "type": "int",
+        "unit": "mm\u00b2"
+      },
+      {
+        "attName": "minRelOverlap",
+        "attName_CH": "",
+        "default": 0,
+        "type": "float",
+        "unit": "%"
+      },
+      {
+        "attName": "priority",
+        "attName_CH": "\u4f18\u5148\u987a\u5e8f",
+        "default": 100,
+        "type": "int",
+        "unit": ""
+      },
+      {
+        "attName": "ImageClassifier",
+        "attName_CH": "\u56fe\u50cf\u5206\u7c7b",
+        "default": 0,
+        "type": "int",
+        "unit": ""
+      },
+      {
+        "attName": "deepGrayLevel",
+        "attName_CH": "deepGrayLevel",
+        "default": 0,
+        "type": "float",
+        "unit": ""
+      },
+      {
+        "attName": "numericID",
+        "attName_CH": "numericID",
+        "default": 0,
+        "type": "int",
+        "unit": ""
+      }
+    ],
+    "defectTypes": []
+  }
+}
