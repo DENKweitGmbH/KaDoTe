@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "cryptography>=43.0.1",
+    "harvesters>=1.4.3",
     "ids-peak>=1.9.0.0.2",
     "matplotlib>=3.9.2",
     "numpy>=2.1.1",
@@ -21,6 +22,7 @@ server = ["keyboard>=0.13.5"]
 dev-dependencies = [
     "mypy>=1.11.2",
     "ruff>=0.6.3",
+    "types-keyboard>=0.13.2.20240310",
     "types-pillow>=10.2.0.20240822",
 ]
 
@@ -83,7 +85,7 @@ ignore = [
     "ISC002",
     # line-too-long: Handled on best effort basis by formatter
     "E501",
-    # Documentation for raised exceptions is very incosistent
+    # Documentation for raised exceptions is very inconsistent
     "DOC502",
 ]
 extend-safe-fixes = [

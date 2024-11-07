@@ -1,0 +1,29 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://denkweit.de/schemas/KaDoTe/results.schema.json",
+    "title": "KaDoTe DENKweit Analysis Results",
+    "description": "Schema for DENKweit image analysis results for the KaDoTe project",
+    "type": "array",
+    "items": {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "x": {
+                    "type": "integer"
+                },
+                "y": {
+                    "type": "integer"
+                },
+                "z": {
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "x",
+                "y",
+                "z"
+            ]
+        }
+    }
+}

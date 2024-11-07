@@ -1,6 +1,10 @@
-from opcua import Server
-import keyboard
+import datetime as dt
 import time
+
+import keyboard
+from opcua import Server
+
+# ruff: noqa: T201
 
 # Initialize the server
 server = Server()
@@ -22,44 +26,43 @@ imageAcquired.set_writable()
 
 # Start the server
 server.start()
-print("Server started at {}".format(server.endpoint))
+print(f"Server started at {server.endpoint}")
 
 delay_passed = False
-time_since_last_button_press = 0
-time_since_last_update = 0
+last_update_time = dt.datetime.now()
+
 
 try:
     while True:
         # Check the user input and execute the corresponding function
-
-        if time.time() - time_since_last_button_press > 1:
+        time.sleep(0.1)
+        if (dt.datetime.now() - last_update_time).total_seconds() > 5:
             delay_passed = True
+            # Send Acquire image once every x seconds
+            acquireImage.set_value(1)
+            print("Acquire image!")
 
-        if time.time() - time_since_last_update > 1:
-            if imageAcquired.get_value() == 1:
-                acquireImage.set_value(0)
-                imageAcquired.set_value(0)
-            print("Acquire image: " + str(acquireImage.get_value()))
+            last_update_time = dt.datetime.now()
+        # Check if client acquired image
+        if imageAcquired.get_value() == 1:
+            acquireImage.set_value(0)
+            imageAcquired.set_value(0)
             print("ImageAcquired: " + str(imageAcquired.get_value()))
-            
-            time_since_last_update = time.time()
 
-        if keyboard.is_pressed('i') and acquireImage.get_value() == 0 and delay_passed == True:
+        if keyboard.is_pressed("i") and acquireImage.get_value() == 0 and delay_passed:
             print(time.time())
-            time_since_last_button_press = time.time()
+            last_update_time = dt.datetime.now()
             delay_passed = False
             value = acquireImage.get_value()
-            print ("Acquire image:" + str(value))
+            print("Acquire image:" + str(value))
             print("Setting AquireImage to 1")
             acquireImage.set_value(1)
             value = acquireImage.get_value()
-            print ("Acquire image:" + str(value))
+            print("Acquire image:" + str(value))
 
-        elif keyboard.is_pressed('q'):
+        elif keyboard.is_pressed("q"):
             print("Exiting program...")
             break
-
-
 finally:
     # Stop the server
     server.stop()
