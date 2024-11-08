@@ -18,7 +18,6 @@ Software_VisionApp*
 *.zip
 *.so
 *.dll
-*.cti
 *.cache
 .venv
 *.egg-info
