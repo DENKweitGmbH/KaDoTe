@@ -10,19 +10,42 @@
             "type": "object",
             "properties": {
                 "x": {
-                    "type": "integer"
+                    "type": "integer",
+                    "comment": "Position x coordinate"
                 },
                 "y": {
-                    "type": "integer"
+                    "type": "integer",
+                    "comment": "Position y coordinate"
                 },
                 "z": {
-                    "type": "integer"
+                    "type": "integer",
+                    "comment": "Position z coordinate"
+                },
+                "r": {
+                    "type": "integer",
+                    "comment": "Roll angle"
+                },
+                "p": {
+                    "type": "integer",
+                    "comment": "Pitch angle"
+                },
+                "yaw": {
+                    "type": "integer",
+                    "comment": "Yaw angle"
+                },
+                "pr": {
+                    "type": "integer",
+                    "comment": "Probability of analysis in percent"
                 }
             },
             "required": [
                 "x",
                 "y",
-                "z"
+                "z",
+                "r",
+                "p",
+                "yaw",
+                "pr"
             ]
         }
     }
