@@ -2,6 +2,7 @@
 """OPCUA test server implementation."""
 
 import datetime as dt
+import json
 import logging
 import sys
 import time
@@ -15,6 +16,7 @@ except ImportError:
     has_keyboard = False
 
 from opcua import Server
+from opcua.ua import StringNodeId
 
 # ruff: noqa: T201, D103
 
@@ -30,12 +32,16 @@ def main(args_: list[str]) -> None:
     stream_h.setFormatter(stream_fmter)
     log.addHandler(stream_h)
     log.setLevel(logging.DEBUG)
+    log.getChild("opcua").setLevel(logging.WARNING)
     parser = ArgumentParser(
         description="OPCUA test server implementation",
         formatter_class=ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--interval", type=float, default=1.0, help="Interval in which analysis is requested (in sec)."
+        "--interval",
+        type=float,
+        default=1.0,
+        help="Interval in which analysis is requested (in sec).",
     )
     # The keyboard functionality requires root privileges on linux so we disable it by default.
     parser.add_argument(
@@ -57,6 +63,8 @@ def main(args_: list[str]) -> None:
     acquire_image = node.add_variable(idx, "AquireImage", 0)
     image_acquired = node.add_variable(idx, "ImageAcquired", 0)
     image_acquired.set_writable()
+    results = node.add_variable(idx, "Results", "", datatype=StringNodeId("String", idx))
+    results.set_writable()
 
     # Start the server
     server.start()
@@ -68,9 +76,8 @@ def main(args_: list[str]) -> None:
             # Check the user input and execute the corresponding function
             time.sleep(0.1)
             if (
-                acquire_image.get_value() == 0
-                and (dt.datetime.now() - last_update_time).total_seconds() > args.interval
-            ):
+                dt.datetime.now() - last_update_time
+            ).total_seconds() > args.interval and acquire_image.get_value() == 0:
                 # Send Acquire image once every x seconds
                 acquire_image.set_value(1)
                 last_update_time = dt.datetime.now()
@@ -80,6 +87,8 @@ def main(args_: list[str]) -> None:
                 acquire_image.set_value(0)
                 image_acquired.set_value(0)
                 log.info("Analysis done")
+                res = results.get_value()
+                log.info("Results are: %s (raw: %r)", json.loads(res), res)
 
             if args.disable_keyboard:
                 continue

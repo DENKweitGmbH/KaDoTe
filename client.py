@@ -53,6 +53,21 @@ class EvalParameters(TypedDict, total=True):
 EvalResult: TypeAlias = tuple[bytes, int, int, int]
 
 
+class AnalysisResult(TypedDict, total=True):
+    """Python representation of results json object.
+
+    See `schemas/result.schema.json.
+    """
+
+    x: int
+    y: int
+    z: int
+    r: int
+    p: int
+    yaw: int
+    pr: int
+
+
 class Gui:
     def __init__(  # noqa: PLR0913, PLR0915, PLR0917
         self,
@@ -442,7 +457,7 @@ class OpcuaClient:
         self.client: opcua.Client | None = None
 
     def connect_to_server(self, params: ServerParameters) -> None:
-        log = logging.getLogger().getChild("opcua")
+        log = logging.getLogger().getChild("opcua_client")
         log.info("Trying to establish connection with server %s", params["url"])
         try:
             self.client = opcua.Client(params["url"])
@@ -494,6 +509,25 @@ class OpcuaClient:
         if self.client is None:
             return
         self.image_acquired_node.set_value(value)
+
+    @property
+    def results_node(self) -> opcua.Node:
+        if self.client is None:
+            msg = "Client not connected to server"
+            raise ValueError(msg)
+        return self.client.get_node("ns = 2; i = 4")
+
+    @property
+    def results(self) -> str:
+        if self.client is None:
+            return ""
+        return cast(str, self.image_acquired_node.get_value())
+
+    @results.setter
+    def results(self, value: str) -> None:
+        if self.client is None:
+            return
+        self.results_node.set_value(value)
 
 
 class Wenglor:
@@ -867,6 +901,10 @@ def check_acquire_and_evaluate(
     if acquire_image == 1 and image_acquired == 0:
         acquire_and_evaluate(gui, libdenk, camera, wenglor)
         client.image_acquired = 1
+        # TODO: Create actual results here
+        client.results = json.dumps(
+            [AnalysisResult(x=0, y=0, z=0, r=0, p=0, yaw=0, pr=100)], separators=(",", ":")
+        )
 
 
 def _setup_logging() -> None:
@@ -880,6 +918,7 @@ def _setup_logging() -> None:
     stream_h.setFormatter(stream_fmter)
     log.addHandler(stream_h)
     # Matplotlib and PIL logs are very verbose, set them to warning
+    log.getChild("opcua").setLevel(logging.WARNING)
     log.getChild("matplotlib").setLevel(logging.WARNING)
     log.getChild("PIL").setLevel(logging.WARNING)
 
