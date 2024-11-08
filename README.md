@@ -5,7 +5,7 @@
 - Install <https://github.com/astral-sh/uv>
 - `uv sync`
 
-## OPCUA Server
+## OPCUA Test Server
 
 Nutzung via OPCUA-Bibliothek für Python siehe Scripte `Server.py` und `Client.py`.
 Im Server-Script wird das Bildaufnehmen testweise durch drücken der taste "i" ausgelöst.

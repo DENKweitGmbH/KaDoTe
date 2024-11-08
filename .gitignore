@@ -22,4 +22,4 @@ Software_VisionApp*
 *.cache
 .venv
 *.egg-info
-
+models
