@@ -1,3 +1,6 @@
+# Copyright (c) 2024 DENKweit GmbH <denkweit.com> All rights reserved.
+"""Test server implementation."""
+
 import datetime as dt
 import time
 

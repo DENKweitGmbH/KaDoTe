@@ -1,3 +1,4 @@
+# Copyright (c) 2024 DENKweit GmbH <denkweit.com> All rights reserved.
 from opcua import Client
 from opcua.ua import NodeId
 from opcua.crypto import uacrypto
