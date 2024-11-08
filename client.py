@@ -11,11 +11,12 @@ import struct
 import sys
 import time
 import tkinter as tk
-from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+import warnings
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from datetime import datetime
 from pathlib import Path
 from tkinter import ttk
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict, cast
 
 import ids_peak_ipl.ids_peak_ipl as ids_ipl
 import numpy as np
@@ -29,7 +30,10 @@ from PIL import Image
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-# ruff: noqa: T201, D101, D102, D103, D107
+# ruff: noqa: T201, D101, D102, D103, D107, DOC201
+
+# IDS library has some of these
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
 class ServerParameters(TypedDict, total=True):
@@ -46,14 +50,18 @@ class EvalParameters(TypedDict, total=True):
     probability_threshold: float
 
 
+EvalResult: TypeAlias = tuple[bytes, int, int, int]
+
+
 class Gui:
     def __init__(  # noqa: PLR0913, PLR0915, PLR0917
         self,
         connect_to_server: Callable[[ServerParameters], None],
         server_parameters: ServerParameters,
-        acquire_image: Callable[[CameraParameters], object],
+        acquire_image: Callable[[CameraParameters], Path],
         camera_parameters: CameraParameters,
-        acquire_point_cloud: Callable[[], None],
+        acquire_point_cloud: Callable[[], object] | None,
+        evaluate_image: Callable[[Path, EvalParameters], EvalResult],
         eval_parameters: EvalParameters,
     ) -> None:
         """Initialize GUI."""
@@ -62,19 +70,21 @@ class Gui:
 
         self.acquire_image = acquire_image
         self.camera_parameters = camera_parameters
+        self.last_image_file: Path | None = None
 
-        self.acquire_point_cloud = acquire_point_cloud
+        self.acquire_point_cloud = acquire_point_cloud if acquire_point_cloud else lambda: None
 
+        self.evaluate_image = evaluate_image
         self.eval_parameters = eval_parameters
         self.point_cloud_data: Any = None
         # Build Gui
         self.root = tk.Tk()
         self.root.title("DENKweit KaDoTe")
-        self.root.geometry("730x300")
+        self.root.geometry("1000x700")
 
         self.tab_control = ttk.Notebook(self.root)
         self.server_tab_frame = ttk.Frame(self.tab_control)
-        self.tab_control.add(self.server_tab_frame, text="Server")
+        self.tab_control.add(self.server_tab_frame, text="Server", sticky="nsew")
         self.camera_tab_frame = ttk.Frame(self.tab_control)
         self.tab_control.add(self.camera_tab_frame, text="Camera")
         self.wenglor_tab_frame = ttk.Frame(self.tab_control)
@@ -82,9 +92,11 @@ class Gui:
         self.ai_tab_frame = ttk.Frame(self.tab_control)
         self.tab_control.add(self.ai_tab_frame, text="AI")
         # camera tab stuff
+        self.camera_tab_frame.rowconfigure(3, weight=1)
+        self.camera_tab_frame.columnconfigure(2, weight=1)
         self.acquire_ids_image_button = tk.Button(
             self.camera_tab_frame,
-            command=lambda: self.acquire_image(self.camera_parameters),
+            command=self.acquire_and_display,
             text="Acquire camera image",
         )
         self.acquire_ids_image_button.grid(row=0, column=0, columnspan=5)
@@ -124,15 +136,20 @@ class Gui:
         self.entry_image_size_percent.grid(row=2, column=2, columnspan=1)
         self.entry_image_size_percent.bind("<Return>", self.update_camera_parameters)
         self.textbox_camera_tab = tk.Text(self.camera_tab_frame, height=10, width=90)
-        self.textbox_camera_tab.grid(row=3, column=0, columnspan=5)
+        self.textbox_camera_tab.grid(
+            sticky=tk.E + tk.N + tk.W + tk.S, row=3, column=0, columnspan=5
+        )
         self.textbox_camera_tab.config(state=tk.DISABLED)
 
         # Ai Tab stuff
-        # TODO: What should this button do?
-        self.acquire_dummy_image_button = tk.Button(
-            self.ai_tab_frame, command=lambda: None, text="Evaluate test image"
+        self.ai_tab_frame.rowconfigure(2, weight=1)
+        self.ai_tab_frame.columnconfigure(2, weight=1)
+        self.evaluate_image_button = tk.Button(
+            self.ai_tab_frame,
+            command=self.eval_and_display,
+            text="Evaluate image",
         )
-        self.acquire_dummy_image_button.grid(row=0, column=0, columnspan=5)
+        self.evaluate_image_button.grid(row=0, column=0, columnspan=5)
 
         self.detection_threshold_label = tk.Label(self.ai_tab_frame, text="Min probability [%]:")
         self.detection_threshold_label.grid(row=1, column=0, columnspan=2)
@@ -147,39 +164,54 @@ class Gui:
         self.entry_detection_threshold.bind("<Return>", self.update_eval_parameters)
 
         self.textbox_ai_tab = tk.Text(self.ai_tab_frame, height=13, width=90)
-        self.textbox_ai_tab.grid(row=2, column=0, columnspan=5)
+        self.textbox_ai_tab.grid(sticky=tk.E + tk.N + tk.W + tk.S, row=2, column=0, columnspan=5)
         self.textbox_ai_tab.config(state=tk.DISABLED)
 
         # Wenglor tab stuff
+        self.wenglor_tab_frame.rowconfigure(3, weight=1)
+        for col in range(4):
+            self.wenglor_tab_frame.columnconfigure(col, weight=1)
         self.acquire_pointcloud_button = tk.Button(
-            self.wenglor_tab_frame, command=acquire_point_cloud, text="Acquire point cloud"
+            self.wenglor_tab_frame, command=self.acquire_point_cloud, text="Acquire point cloud"
         )
-        self.acquire_pointcloud_button.grid(row=0, column=0, columnspan=2)
+        self.acquire_pointcloud_button.grid(
+            sticky=tk.E + tk.N + tk.W + tk.S, row=0, column=0, columnspan=1
+        )
         self.show_last_intensity_map_button = tk.Button(
             self.wenglor_tab_frame,
             command=self.show_last_intensity_map,
             text="Show last intensity map",
         )
-        self.show_last_intensity_map_button.grid(row=0, column=2, columnspan=1)
+        self.show_last_intensity_map_button.grid(
+            sticky=tk.E + tk.N + tk.W + tk.S, row=0, column=1, columnspan=1
+        )
         self.show_last_height_map_button = tk.Button(
             self.wenglor_tab_frame, command=self.show_last_height_map, text="Show last height map"
         )
-        self.show_last_height_map_button.grid(row=0, column=3, columnspan=1)
+        self.show_last_height_map_button.grid(
+            sticky=tk.E + tk.N + tk.W + tk.S, row=0, column=2, columnspan=1
+        )
         self.show_last_point_cloud_button = tk.Button(
             self.wenglor_tab_frame, command=self.show_last_point_cloud, text="Show last point cloud"
         )
-        self.show_last_point_cloud_button.grid(row=0, column=4, columnspan=1)
+        self.show_last_point_cloud_button.grid(
+            sticky=tk.E + tk.N + tk.W + tk.S, row=0, column=3, columnspan=1
+        )
 
         self.textbox_wenglor_tab = tk.Text(self.wenglor_tab_frame, height=10, width=90)
-        self.textbox_wenglor_tab.grid(row=3, column=0, columnspan=5)
+        self.textbox_wenglor_tab.grid(
+            sticky=tk.E + tk.N + tk.W + tk.S, row=3, column=0, columnspan=4
+        )
         self.textbox_wenglor_tab.config(state=tk.DISABLED)
         # Server tab stuff
+        self.server_tab_frame.rowconfigure(1, weight=1)
+        self.server_tab_frame.columnconfigure(1, weight=1)
         self.server_label = tk.Label(self.server_tab_frame, text="OPCUA server URL:")
         self.server_label.grid(row=0, column=0, columnspan=1)
         self.entry_server_url = tk.Entry(self.server_tab_frame, width=50)
         self.entry_server_url.insert(0, "opc.tcp://localhost:4840/freeopcua/server/")
         self.entry_server_url.bind("<Return>", self.update_server_parameters)
-        self.entry_server_url.grid(row=0, column=1, columnspan=3)
+        self.entry_server_url.grid(sticky=tk.E + tk.N + tk.W + tk.S, row=0, column=1, columnspan=3)
         self.button_connect_to_server = tk.Button(
             self.server_tab_frame,
             text="Connect",
@@ -188,9 +220,14 @@ class Gui:
         self.button_connect_to_server.grid(row=0, column=4, columnspan=1)
 
         self.textbox_server_tab = tk.Text(self.server_tab_frame, height=13, width=90)
-        self.textbox_server_tab.grid(row=1, column=0, columnspan=5)
+        self.textbox_server_tab.grid(
+            sticky=tk.E + tk.N + tk.W + tk.S, row=1, column=0, columnspan=5
+        )
         self.textbox_server_tab.config(state=tk.DISABLED)
-        self.tab_control.grid(sticky=tk.E + tk.N + tk.W + tk.N)
+
+        self.root.rowconfigure(0, weight=1)
+        self.root.columnconfigure(0, weight=1)
+        self.tab_control.grid(sticky=tk.E + tk.N + tk.W + tk.S, padx=5, pady=5)
 
     @staticmethod
     def _validate_int(action: str, value_if_allowed: str) -> bool:
@@ -213,6 +250,21 @@ class Gui:
         if action != "1":
             return True
         return 0 <= int(value_if_allowed) <= 100  # noqa: PLR2004
+
+    def acquire_and_display(self) -> None:
+        """Acquire new image and display."""
+        try:
+            self.last_image_file = self.acquire_image(self.camera_parameters)
+        except (ids_peak.Exception, ids_ipl.Exception):
+            return
+        self.display_image(self.last_image_file)
+
+    def eval_and_display(self) -> None:
+        """Evaluate image and display result."""
+        if self.last_image_file is None:
+            return
+        res = self.evaluate_image(self.last_image_file, self.eval_parameters)
+        self.save_and_display_image(*res, self.last_image_file)
 
     def update_camera_textbox(self, new_info: str) -> None:
         self.textbox_camera_tab.config(state=tk.NORMAL)  # Set state to normal to allow editing
@@ -294,7 +346,16 @@ class Gui:
             self.update_ai_textbox("Enter a value between 1 and 100.")
 
     @staticmethod
-    def display_image(
+    def display_image(img: Image.Image | Path) -> None:
+        """Display the image using matplotlib."""
+        plt.figure(figsize=(15, 15))
+        if isinstance(img, Path):
+            img = Image.open(img)
+        plt.imshow(img)
+        plt.show()
+
+    @staticmethod
+    def save_and_display_image(
         img_buffer: bytes, img_w: int, img_h: int, img_c: int, image_file: str | Path
     ) -> None:
         """Display the output image."""
@@ -307,10 +368,7 @@ class Gui:
         insertion = "_evaluated"
         new_filename = f"{name}{insertion}{ext}"
         img.save(new_filename, "JPEG")
-        # Optional: display the image using matplotlib
-        plt.figure(figsize=(15, 15))
-        plt.imshow(img)
-        plt.show()
+        Gui.display_image(img)
 
     def show_last_height_map(self) -> None:
         if self.point_cloud_data is None:
@@ -385,13 +443,14 @@ class OpcuaClient:
 
     def connect_to_server(self, params: ServerParameters) -> None:
         log = logging.getLogger().getChild("opcua")
+        log.info("Trying to establish connection with server %s", params["url"])
         try:
             self.client = opcua.Client(params["url"])
             self.client.connect()
             self.console("Connected to server.")
         except OSError:
-            log.exception("Server connection failed.")
             self.client = None
+            log.info("Server connection failed.")
             self.console("Server connection failed.")
 
     @property
@@ -438,18 +497,22 @@ class OpcuaClient:
 
 
 class Wenglor:
-    def __init__(self) -> None:
-        """Initialize Wenglor Sensor."""
+    def __init__(self, producer_file: str | Path = Path("mvGenTLProducer.cti")) -> None:
+        """Initialize Wenglor Sensor.
+
+        Raises:
+            ValueError: If no sensor is found.
+        """
         self.console: Callable[[str], None] = lambda _s: None
         self.log = logging.getLogger().getChild("wenglor")
         # TODO: Start GigE software automatically?
         # script_path = "start_GigE_server.bat"  # noqa: ERA001
         # process = subprocess.Popen(['bash', '-c', script_path], shell = True)  # noqa: ERA001
         h = Harvester()
-        h.add_file("mvGenTLProducer.cti")
+        h.add_file(str(producer_file))
         h.update()
-        self.log.debug(h.device_info_list)
-        self.ia = h.create_image_acquirer(0)
+        self.log.debug("Devices: %s", h.device_info_list)
+        self.ia = h.create()
         self.point_cloud_data: None = None
 
     def acquire_point_cloud(self) -> None:
@@ -462,6 +525,10 @@ class Wenglor:
         except:
             self.log.exception("Acquiring point cloud failed.")
             self.console("Acquiring point cloud failed.")
+
+    def __del__(self) -> None:
+        if hasattr(self, "ia"):
+            self.ia.destroy()
 
 
 class IdsCamera:
@@ -545,17 +612,17 @@ class IdsCamera:
             resized_image.save(str(file_name), "JPEG")
             self.console("Acquired camera image.")
             self.log.info("Acquired camera image.")
-        except Exception:
-            self.log.exception("Image acquisition failed. Acquiring dummy image.")
-            self.console("Image acquisition failed. Acquiring dummy image.")
-            file_name = Path("testimage.jpg")
+        except (ids_peak.Exception, ids_ipl.Exception):
+            self.log.exception("Image acquisition failed.")
+            self.console("Image acquisition failed.")
+            raise
         return file_name
 
 
 class MockCamera:
     def __init__(self) -> None:
         self.console: Callable[[str], None] = lambda _s: None
-        self.log = logging.getLogger().getChild("mock_cam")
+        self.log = logging.getLogger().getChild("ids.mock")
 
     def acquire_image(self, _params: CameraParameters) -> Path:
         self.log.info("Acquiring dummy image.")
@@ -564,28 +631,33 @@ class MockCamera:
 
 
 class Libdenk:
-    def __init__(self, token: str) -> None:
+    def __init__(
+        self, token: str, library_dir: Path | None = None, model_dir: Path = Path("models")
+    ) -> None:
         self.console: Callable[[str], None] = lambda _s: None
+        if library_dir is None:
+            library_dir = Path.cwd()
         # Initialize networks
+        # Load the DLL
         if sys.platform == "win32":
-            # Add the current working directoy to the DLL serch path
-            os.add_dll_directory(Path.cwd())
-            # Load the DLL
+            # Add the current working directory to the DLL search path
+            os.add_dll_directory(str(library_dir))
             self.libdll = ctypes.cdll.LoadLibrary("denk.dll")
         elif sys.platform == "linux":
-            # Load the DLL
+            # TODO: Might need to add library_dir to LD_LIBRARY_PATH env var?
             self.libdll = ctypes.cdll.LoadLibrary("libdenk.so")
-        self.libdll.BuildInfo()
 
+        self.libdll.BuildInfo()
         retval = self.libdll.TokenLogin(token.encode("utf-8"), b"\x00")
         self.print_formatted_return("TokenLogin", retval)
         # Allocate a buffer for the model information
         modelinfo = b"\x00" * 10000
         modelinfo_size = ctypes.c_int(len(modelinfo))
         modelinfo_size_pnt = ctypes.pointer(modelinfo_size)
-
-        # Read all model files in the "models" directory, write the model info into "buffer" (will be ignored in this example), select the CPU (-1) as the evaluation device
-        retval = self.libdll.ReadAllModels(b"models", modelinfo, modelinfo_size_pnt, -1)
+        # Read all model files in the model_dir directory, write the model info into "buffer" (will be ignored in this example), select the CPU (-1) as the evaluation device
+        retval = self.libdll.ReadAllModels(
+            str(model_dir).encode("utf-8"), modelinfo, modelinfo_size_pnt, -1
+        )
         self.print_formatted_return("ReadAllModels", retval)
 
         # Get the default JSON
@@ -613,16 +685,28 @@ class Libdenk:
             json.dump(default_json_with_models, file, indent=2)
 
     @staticmethod
-    def print_formatted_return(function_name: str, retval: int, t: float | None = None) -> None:
-        """Prints the returned integer value as hexadecimal."""
+    def print_formatted_return(
+        function_name: str, retval: int, t: float | None = None, *, raise_on_error: bool = True
+    ) -> bool:
+        """Prints the returned integer value as hexadecimal.
+
+        Returns:
+            Whether the status is okay.
+
+        Raises:
+            RuntimeError: If libdenk status is not ok and raise_on_error is True.
+        """
         log = logging.getLogger().getChild("libdenk")
         code = struct.pack(">i", retval).hex().upper()
         if t is None:
             log.info("%s returned: %s", function_name, code)
         else:
             log.info("%s returned: %s ({%s} s)", function_name, code, t)
-        if code != "DE000000":
-            sys.exit()
+        ok = code == "DE000000"
+        if raise_on_error and not ok:
+            msg = f"Libdenk function {function_name} returned code {code}!"
+            raise RuntimeError(msg)
+        return ok
 
     @staticmethod
     def c_str_to_p_str(c_str: bytes) -> str:
@@ -635,11 +719,12 @@ class Libdenk:
         self,
         image_file: str | Path,
         eval_parameters: EvalParameters,
-    ) -> tuple[bytes, int, int, int]:
+    ) -> EvalResult:
         import results_pb2  # type: ignore[import-not-found] # noqa: PLC0415
 
         log = logging.getLogger().getChild("libdenk")
         self.console("Evaluating image...")
+        log.info("Evaluating image...")
         probability_threshold = eval_parameters["probability_threshold"]
         # Open the image file in the "read bytes" mode and read the data
         img_data = Path(image_file).read_bytes()
@@ -717,100 +802,177 @@ class Libdenk:
             image_size_pnt,
         )
         self.print_formatted_return("DrawBoxes", retval)
+        self.console("Evaluating image done.")
+        log.info("Evaluating image done.")
         return image, w.value, h.value, c.value
 
 
 class MockEvaluation:
-    console: Callable[[str], None] = lambda _s: None
+    def __init__(self) -> None:
+        self.console: Callable[[str], None] = lambda _s: None
 
-    @staticmethod
     def evaluate_image(
+        self,
         image_file: str | Path,
         _eval_parameters: EvalParameters,
-    ) -> tuple[bytes, int, int, int]:
+    ) -> EvalResult:
+        log = logging.getLogger().getChild("lidenk.mock")
+        self.console("Evaluating image...")
         # Do nothing, return as-is
         with Image.open(image_file) as img:
-            print(len(img.tobytes()), img.width, img.height)
-            return img.tobytes(), img.width, img.height, 3
+            ret = img.tobytes(), img.width, img.height, 3
+        self.console("Evaluating image done.")
+        log.info("Evaluating image done.")
+        return ret
 
 
 def acquire_and_evaluate(
     gui: Gui,
+    libdenk: Libdenk | MockEvaluation,
+    camera: IdsCamera | MockCamera,
+    wenglor: Wenglor | None,
+) -> None:
+    """Execute the analysis "pipeline"."""
+    try:
+        image_file = camera.acquire_image(gui.camera_parameters)
+    except (ids_peak.Exception, ids_ipl.Exception):
+        return
+    image, w, h, c = libdenk.evaluate_image(image_file, gui.eval_parameters)
+    gui.save_and_display_image(image, w, h, c, image_file)
+    if wenglor:
+        wenglor.acquire_point_cloud()
+
+
+def check_acquire_and_evaluate(
+    gui: Gui,
     client: OpcuaClient,
     libdenk: Libdenk | MockEvaluation,
     camera: IdsCamera | MockCamera,
-    wenglor: Wenglor,
+    wenglor: Wenglor | None,
 ) -> None:
-    logging.info("Checking OPCUA server...")
+    """Poll the OPCUA server and do new analysis if requested."""
+    log = logging.getLogger().getChild("opcua")
     if not client.is_connected:
+        log.info("Not connected to OPCUA server.")
         return
 
-    try:
-        # Read the value of the variable#
-        acquire_image = client.acquire_image
-        image_acquired = client.image_acquired
-        logging.debug("acquireImage: %s", acquire_image)
-        logging.debug("imageAcquired: %s", image_acquired)
+    log.info("Checking OPCUA server...")
+    # Read the value of the variable#
+    acquire_image = client.acquire_image
+    image_acquired = client.image_acquired
+    log.debug("'acquireImage' = %s", acquire_image)
+    log.debug("'imageAcquired' = %s", image_acquired)
 
-        # Check if the variable value is "1"
-        if acquire_image == 1 and image_acquired == 0:
-            # Execute the function
-            image_file = camera.acquire_image(gui.camera_parameters)
-            image, w, h, c = libdenk.evaluate_image(image_file, gui.eval_parameters)
-            gui.display_image(image, w, h, c, image_file)
-            client.image_acquired = 1
-            wenglor.acquire_point_cloud()
-    except:
-        logging.exception("Unexcepted error:")
+    # Check if the variable value is "1"
+    if acquire_image == 1 and image_acquired == 0:
+        acquire_and_evaluate(gui, libdenk, camera, wenglor)
+        client.image_acquired = 1
+
+
+def _setup_logging() -> None:
+    log = logging.getLogger()
+    stream_h = logging.StreamHandler()
+    stream_fmter = logging.Formatter(
+        fmt="%(asctime)s.%(msecs)03d %(name)-15s %(levelname)-8s %(message)s",
+        style="%",
+        datefmt="%H:%M:%S",
+    )
+    stream_h.setFormatter(stream_fmter)
+    log.addHandler(stream_h)
+    # Matplotlib and PIL logs are very verbose, set them to warning
+    log.getChild("matplotlib").setLevel(logging.WARNING)
+    log.getChild("PIL").setLevel(logging.WARNING)
+
+
+def _parse_args(args: list[str]) -> Namespace:
+    """CLI argument parsing."""
+    parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--debug", action="store_true", help="Verbose (debug) logging")
+    parser.add_argument(
+        "--token", type=Path, default=Path("token.txt"), help="File containing model token"
+    )
+    parser.add_argument(
+        "--local-only",
+        action="store_true",
+        help="Disable periodic pulling from OPCUA server, limiting functionality.",
+    )
+    parser.add_argument(
+        "--allow-missing-hardware",
+        action="store_true",
+        help="Allow the script to continue without any hardware connected for local testing. (Uses testimage.jpg).",
+    )
+    parser.add_argument(
+        "--check-interval",
+        type=float,
+        default=1.0,
+        help="Interval to check OPCUA server for updates (in sec).",
+    )
+    return parser.parse_args(args)
 
 
 def main(args_: list[str]) -> None:
     log = logging.getLogger()
-    log.setLevel(logging.DEBUG)
-
-    parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument(
-        "--token", type=Path, default=Path("token.txt"), help="File containing model token"
-    )
-    args = parser.parse_args(args_)
+    _setup_logging()
+    args = _parse_args(args_)
+    if args.debug:
+        log.setLevel(logging.DEBUG)
 
     server_parameters = ServerParameters(url="opc.tcp://localhost:4840/freeopcua/server/")
     camera_parameters = CameraParameters(auto_exposure=True, exposure_time=1000, image_size=50)
     eval_parameters = EvalParameters(probability_threshold=0.75)
 
     client = OpcuaClient()
-    wenglor = Wenglor()
+    wenglor: Wenglor | None = None
+    try:
+        wenglor = Wenglor()
+    except ValueError:
+        log.exception("Cannot connect Wenglor device:")
+        if not args.allow_missing_hardware:
+            raise
+
     try:
         libdenk: Libdenk | MockEvaluation = Libdenk(token=args.token.read_text().strip())
-    except:
-        log.exception("Cannot init libdenk")
-        libdenk = MockEvaluation()
+    except OSError:
+        log.exception("Cannot init libdenk:")
+        if args.allow_missing_hardware:
+            libdenk = MockEvaluation()
+        else:
+            raise
 
     try:
         camera: IdsCamera | MockCamera = IdsCamera()
-    except:
-        camera = MockCamera()
+    except (ids_peak.Exception, ids_ipl.Exception):
+        log.exception("Cannot connect IDS camera:")
+        if args.allow_missing_hardware:
+            camera = MockCamera()
+        else:
+            raise
 
     gui = Gui(
         client.connect_to_server,
         server_parameters,
         camera.acquire_image,
         camera_parameters,
-        wenglor.acquire_point_cloud,
+        wenglor.acquire_point_cloud if wenglor else None,
+        libdenk.evaluate_image,
         eval_parameters,
     )
+    # Need to wire up the "console" (outputs) after creating the gui
     client.console = gui.update_server_textbox
     camera.console = gui.update_camera_textbox
-    wenglor.console = gui.update_wenglor_textbox
+    if wenglor:
+        wenglor.console = gui.update_wenglor_textbox
     libdenk.console = gui.update_ai_textbox
+    # Only enable server polling if not disabled
+    if not args.local_only:
+        client.connect_to_server(server_parameters)
 
-    client.connect_to_server(server_parameters)
+        def mainloop() -> None:
+            check_acquire_and_evaluate(gui, client, libdenk, camera, wenglor)
+            gui.root.after(int(args.check_interval * 1000), mainloop)
 
-    def mainloop() -> None:
-        acquire_and_evaluate(gui, client, libdenk, camera, wenglor)
-        gui.root.after(1000, mainloop)
+        gui.root.after(int(args.check_interval * 1000), mainloop)
 
-    gui.root.after(1000, mainloop)
     gui.root.mainloop()
 
 
