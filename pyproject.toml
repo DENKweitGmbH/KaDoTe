@@ -40,7 +40,7 @@ unsafe-fixes = true
 # Gettext function
 builtins = ["_"]
 
-src = ["Client.py", "Server.py"]
+src = ["client.py", "server.py"]
 extend-exclude = ["script_OPCUA_Sara.py", "Client_TUC.py"]
 
 [tool.ruff.lint]
