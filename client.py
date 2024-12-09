@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import json
 import logging
@@ -195,7 +196,7 @@ class Gui:
         for col in range(4):
             self.wenglor_tab_frame.columnconfigure(col, weight=1)
         self.acquire_pointcloud_button = tk.Button(
-            self.wenglor_tab_frame, command=self.acquire_point_cloud, text="Acquire point cloud"
+            self.wenglor_tab_frame, command=self._acquire_point_cloud, text="Acquire point cloud"
         )
         self.acquire_pointcloud_button.grid(
             sticky=tk.E + tk.N + tk.W + tk.S, row=0, column=0, columnspan=1
@@ -281,6 +282,9 @@ class Gui:
         except (ids_peak.Exception, ids_ipl.Exception):
             return
         self.display_image(self.last_image_file)
+
+    def _acquire_point_cloud(self) -> None:
+        self.point_cloud_data = self.acquire_point_cloud()
 
     def eval_and_display(self) -> None:
         """Evaluate image and display result."""
@@ -558,12 +562,14 @@ class Wenglor:
         self.point_cloud_data: None = None
 
     def acquire_point_cloud(self) -> None:
-        self.console("Acquiring point cloud.")
+        self.console("Acquiring point cloud...")
+        self.log.info("Acquiring point cloud...")
         try:
             self.ia.start()
             self.point_cloud_data = self.ia.fetch(timeout=20)
             self.ia.stop()
             self.console("Acquired point cloud.")
+            self.log.info("Acquired point cloud.")
         except:
             self.log.exception("Acquiring point cloud failed.")
             self.console("Acquiring point cloud failed.")
@@ -589,14 +595,14 @@ class IdsCamera:
             self.log.debug(device_descriptor.DisplayName())
 
         try:
-            device = device_descriptors[0].OpenDevice(ids_peak.DeviceAccessType_Exclusive)
-            self.log.info("Opened Device: %s", device.DisplayName())
-            self.remote_device_nodemap = device.RemoteDevice().NodeMaps()[0]
+            self.device = device_descriptors[0].OpenDevice(ids_peak.DeviceAccessType_Exclusive)
+            self.log.info("Opened Device: %s", self.device.DisplayName())
+            self.remote_device_nodemap = self.device.RemoteDevice().NodeMaps()[0]
             self.remote_device_nodemap.FindNode("TriggerSelector").SetCurrentEntry("ExposureStart")
             self.remote_device_nodemap.FindNode("TriggerSource").SetCurrentEntry("Software")
             self.remote_device_nodemap.FindNode("TriggerMode").SetCurrentEntry("On")
 
-            self.datastream = device.DataStreams()[0].OpenDataStream()
+            self.datastream = self.device.DataStreams()[0].OpenDataStream()
             payload_size = self.remote_device_nodemap.FindNode("PayloadSize").Value()
             for _ in range(self.datastream.NumBuffersAnnouncedMinRequired()):
                 buffer = self.datastream.AllocAndAnnounceBuffer(payload_size)
@@ -897,10 +903,8 @@ def check_acquire_and_evaluate(
     # Check which stage we need to execute
     match acquire_image:
         case AcquireStages.Camera:
-            try:
+            with contextlib.suppress(ids_peak.Exception, ids_ipl.Exception):
                 camera.acquire_image(gui.camera_parameters)
-            except (ids_peak.Exception, ids_ipl.Exception):
-                log.exception("Could not acquire camera image:")
         case AcquireStages.PointCloud if wenglor is not None:
             wenglor.acquire_point_cloud()
     # Evaluate the images if we executed the last stage
