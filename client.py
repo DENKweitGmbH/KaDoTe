@@ -561,7 +561,7 @@ class Wenglor:
         self.console("Acquiring point cloud.")
         try:
             self.ia.start()
-            self.point_cloud_data = self.ia.fetch_buffer(timeout=20)
+            self.point_cloud_data = self.ia.fetch(timeout=20)
             self.ia.stop()
             self.console("Acquired point cloud.")
         except:
@@ -578,6 +578,7 @@ class IdsCamera:
         """Initialize IDS camera."""
         self.console: Callable[[str], None] = lambda _s: None
         self.log = logging.getLogger().getChild("ids")
+        self.last_image_file: Path | None = None
         ids_peak.Library.Initialize()
         device_manager = ids_peak.DeviceManager.Instance()
         device_manager.Update()
@@ -658,6 +659,7 @@ class IdsCamera:
             self.log.exception("Image acquisition failed.")
             self.console("Image acquisition failed.")
             raise
+        self.last_image_file = file_name
         return file_name
 
 
@@ -665,11 +667,12 @@ class MockCamera:
     def __init__(self) -> None:
         self.console: Callable[[str], None] = lambda _s: None
         self.log = logging.getLogger().getChild("ids.mock")
+        self.last_image_file: Path = Path("testimage.jpg")
 
     def acquire_image(self, _params: CameraParameters) -> Path:
         self.log.info("Acquiring dummy image.")
         self.console("Acquiring dummy image.")
-        return Path("testimage.jpg")
+        return self.last_image_file
 
 
 class Libdenk:
@@ -868,21 +871,9 @@ class MockEvaluation:
         return ret
 
 
-def acquire_and_evaluate(
-    gui: Gui,
-    libdenk: Libdenk | MockEvaluation,
-    camera: IdsCamera | MockCamera,
-    wenglor: Wenglor | None,
-) -> None:
-    """Execute the analysis "pipeline"."""
-    try:
-        image_file = camera.acquire_image(gui.camera_parameters)
-    except (ids_peak.Exception, ids_ipl.Exception):
-        return
-    image, w, h, c = libdenk.evaluate_image(image_file, gui.eval_parameters)
-    gui.save_and_display_image(image, w, h, c, image_file)
-    if wenglor:
-        wenglor.acquire_point_cloud()
+class AcquireStages(IntEnum):
+    Camera = 1
+    PointCloud = 2
 
 
 def check_acquire_and_evaluate(
@@ -897,23 +888,36 @@ def check_acquire_and_evaluate(
     if not client.is_connected:
         log.info("Not connected to OPCUA server.")
         return
-
     log.info("Checking OPCUA server...")
-    # Read the value of the variable#
+    # Read the value of the variable
     acquire_image = client.acquire_image
     image_acquired = client.image_acquired
     log.debug("'acquireImage' = %s", acquire_image)
     log.debug("'imageAcquired' = %s", image_acquired)
-
-    # Check if the variable value is "1"
-    if acquire_image == 1 and image_acquired == 0:
-        acquire_and_evaluate(gui, libdenk, camera, wenglor)
-        client.image_acquired = 1
-        # TODO: Create actual results here
-        client.results = json.dumps(
-            [AnalysisResult(x=0, y=0, z=0, r=0, p=0, yaw=0, t=ObjectType.Unknown, pr=100)],
-            separators=(",", ":"),
-        )
+    # Check which stage we need to execute
+    match acquire_image:
+        case AcquireStages.Camera:
+            try:
+                camera.acquire_image(gui.camera_parameters)
+            except (ids_peak.Exception, ids_ipl.Exception):
+                log.exception("Could not acquire camera image:")
+        case AcquireStages.PointCloud if wenglor is not None:
+            wenglor.acquire_point_cloud()
+    # Evaluate the images if we executed the last stage
+    if acquire_image == max(AcquireStages):
+        if camera.last_image_file is None:
+            log.warning("Cannot evaluate, camera image is missing!")
+        else:
+            # TODO: Do something with the point cloud?
+            image, w, h, c = libdenk.evaluate_image(camera.last_image_file, gui.eval_parameters)
+            gui.save_and_display_image(image, w, h, c, camera.last_image_file)
+            # TODO: Create actual results here
+            client.results = json.dumps(
+                [AnalysisResult(x=0, y=0, z=0, r=0, p=0, yaw=0, t=ObjectType.Unknown, pr=100)],
+                separators=(",", ":"),
+            )
+    # Signal completion to server
+    client.image_acquired = 1
 
 
 def _setup_logging() -> None:
