@@ -70,6 +70,8 @@ def main(args_: list[str]) -> None:
     server.start()
     log.info("Server started at %s", server.endpoint)
     last_update_time = dt.datetime.now()
+    next_stage = 1
+    max_stage = 2
 
     try:
         while True:
@@ -79,25 +81,32 @@ def main(args_: list[str]) -> None:
                 dt.datetime.now() - last_update_time
             ).total_seconds() > args.interval and acquire_image.get_value() == 0:
                 # Send Acquire image once every x seconds
-                acquire_image.set_value(1)
+                acquire_image.set_value(next_stage)
+                log.info("Set 'AcquireImage' to %s", next_stage)
+                next_stage += 1
+                if next_stage > max_stage:
+                    next_stage = 1
                 last_update_time = dt.datetime.now()
-                log.info("Set 'AcquireImage' to 1")
             # Check if client acquired image
             if image_acquired.get_value() == 1:
                 acquire_image.set_value(0)
                 image_acquired.set_value(0)
                 log.info("Analysis done")
                 res = results.get_value()
-                log.info("Results are: %s (raw: %r)", json.loads(res), res)
-
+                if res:
+                    log.info("Results are: %s (raw: %r)", json.loads(res), res)
+                    results.set_value("")
             if args.disable_keyboard:
                 continue
 
             if keyboard.is_pressed("i") and acquire_image.get_value() == 0:
                 log.info(time.time())
+                acquire_image.set_value(next_stage)
+                log.info("Set 'AcquireImage' to %s", next_stage)
+                next_stage += 1
+                if next_stage > max_stage:
+                    next_stage = 1
                 last_update_time = dt.datetime.now()
-                acquire_image.set_value(1)
-                log.info("Set 'AcquireImage' to 1")
             elif keyboard.is_pressed("q"):
                 log.info("Exiting program...")
                 break
