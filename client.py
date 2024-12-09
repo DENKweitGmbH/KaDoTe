@@ -14,6 +14,7 @@ import tkinter as tk
 import warnings
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from datetime import datetime
+from enum import IntEnum
 from pathlib import Path
 from tkinter import ttk
 from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict, cast
@@ -53,6 +54,12 @@ class EvalParameters(TypedDict, total=True):
 EvalResult: TypeAlias = tuple[bytes, int, int, int]
 
 
+class ObjectType(IntEnum):
+    """Classification object type."""
+
+    Unknown = -1
+
+
 class AnalysisResult(TypedDict, total=True):
     """Python representation of results json object.
 
@@ -65,6 +72,7 @@ class AnalysisResult(TypedDict, total=True):
     r: int
     p: int
     yaw: int
+    t: ObjectType
     pr: int
 
 
@@ -903,7 +911,8 @@ def check_acquire_and_evaluate(
         client.image_acquired = 1
         # TODO: Create actual results here
         client.results = json.dumps(
-            [AnalysisResult(x=0, y=0, z=0, r=0, p=0, yaw=0, pr=100)], separators=(",", ":")
+            [AnalysisResult(x=0, y=0, z=0, r=0, p=0, yaw=0, t=ObjectType.Unknown, pr=100)],
+            separators=(",", ":"),
         )
 
 

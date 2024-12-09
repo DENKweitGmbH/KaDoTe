@@ -33,6 +33,10 @@
                     "type": "integer",
                     "comment": "Yaw angle"
                 },
+                "t": {
+                    "type": "integer",
+                    "comment": "Object type. See client.ObjectType enum for possible values."
+                },
                 "pr": {
                     "type": "integer",
                     "comment": "Probability of analysis in percent"
@@ -45,6 +49,7 @@
                 "r",
                 "p",
                 "yaw",
+                "t",
                 "pr"
             ]
         }
