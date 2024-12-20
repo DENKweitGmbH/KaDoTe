@@ -1,0 +1,56 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://denkweit.de/schemas/KaDoTe/opcua-server-config.schema.json",
+    "title": "KaDoTe OPCUA Server Config",
+    "description": "Schema for KaDoTe OPCUA server configuration for DENKweit software.",
+    "type": "object",
+    "properties": {
+        "url": {
+            "type": "string",
+            "comment": "Server url including port and protocol (probably 'opc.tcp')"
+        },
+        "namespace": {
+            "type": "integer",
+            "comment": "OPCUA namespace"
+        },
+        "nodes": {
+            "type": "object",
+            "comment": "OPCUA node names",
+            "properties": {
+                "capture_image_1": {
+                    "$ref": "#/$defs/node"
+                },
+                "capture_image_2": {
+                    "$ref": "#/$defs/node"
+                },
+                "results": {
+                    "$ref": "#/$defs/node"
+                }
+            },
+            "required": [
+                "capture_image_1",
+                "capture_image_2",
+                "results"
+            ]
+        }
+    },
+    "required": [
+        "url",
+        "namespace",
+        "nodes"
+    ],
+    "$defs": {
+        "node": {
+            "oneOf": [
+                {
+                    "type": "string",
+                    "comment": "A node defined by name"
+                },
+                {
+                    "type": "integer",
+                    "comment": "A node defined by index"
+                }
+            ]
+        }
+    }
+}

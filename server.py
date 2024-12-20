@@ -21,7 +21,7 @@ from opcua.ua import StringNodeId
 # ruff: noqa: T201, D103
 
 
-def main(args_: list[str]) -> None:
+def main(args_: list[str]) -> None:  # noqa: PLR0915
     log = logging.getLogger()
     stream_h = logging.StreamHandler()
     stream_fmter = logging.Formatter(
@@ -56,14 +56,16 @@ def main(args_: list[str]) -> None:
     server.set_endpoint("opc.tcp://localhost:4840/freeopcua/server/")
     # Register a namespace
     uri = "http://denkweit.de"
-    idx = server.register_namespace(uri)
+    ns = server.register_namespace(uri)
     # Create a new node
-    node = server.nodes.objects.add_object(idx, "MyObject")
+    node = server.nodes.objects.add_object(ns, "CameraControl")
     # Add a variable to the node
-    acquire_image = node.add_variable(idx, "AquireImage", 0)
-    image_acquired = node.add_variable(idx, "ImageAcquired", 0)
-    image_acquired.set_writable()
-    results = node.add_variable(idx, "Results", "", datatype=StringNodeId("String", idx))
+    capture_image_1 = node.add_variable(ns, "CaptureImage1", val=False)
+    capture_image_1.set_writable()
+    capture_image_2 = node.add_variable(ns, "CaptureImage2", val=False)
+    capture_image_2.set_writable()
+    # TODO: Should be array of strings
+    results = node.add_variable(ns, "Results", "", datatype=StringNodeId("String", ns))
     results.set_writable()
 
     # Start the server
@@ -71,42 +73,42 @@ def main(args_: list[str]) -> None:
     log.info("Server started at %s", server.endpoint)
     last_update_time = dt.datetime.now()
     next_stage = 1
-    max_stage = 2
+    key_pressed = False
 
     try:
         while True:
             # Check the user input and execute the corresponding function
             time.sleep(0.1)
             if (
-                dt.datetime.now() - last_update_time
-            ).total_seconds() > args.interval and acquire_image.get_value() == 0:
-                # Send Acquire image once every x seconds
-                acquire_image.set_value(next_stage)
-                log.info("Set 'AcquireImage' to %s", next_stage)
+                (
+                    (dt.datetime.now() - last_update_time).total_seconds() > args.interval
+                    or key_pressed
+                )
+                and not capture_image_1.get_value()
+                and not capture_image_2.get_value()
+            ):
+                # Send capture image once every x seconds
+                if next_stage == 1:
+                    capture_image_1.set_value(True)
+                    log.info("Set 'CaptureImage1'")
+                elif next_stage == 2:  # noqa: PLR2004
+                    capture_image_2.set_value(True)
+                    log.info("Set 'CaptureImage2'")
                 next_stage += 1
-                if next_stage > max_stage:
+                if next_stage > 2:  # noqa: PLR2004
                     next_stage = 1
                 last_update_time = dt.datetime.now()
+            key_pressed = False
             # Check if client acquired image
-            if image_acquired.get_value() == 1:
-                acquire_image.set_value(0)
-                image_acquired.set_value(0)
+            if next_stage == 1 and (res := results.get_value()):
                 log.info("Analysis done")
-                res = results.get_value()
-                if res:
-                    log.info("Results are: %s (raw: %r)", json.loads(res), res)
-                    results.set_value("")
+                log.info("Results are: %s (raw: %r)", json.loads(res), res)
+                results.set_value("")
             if args.disable_keyboard:
                 continue
 
-            if keyboard.is_pressed("i") and acquire_image.get_value() == 0:
-                log.info(time.time())
-                acquire_image.set_value(next_stage)
-                log.info("Set 'AcquireImage' to %s", next_stage)
-                next_stage += 1
-                if next_stage > max_stage:
-                    next_stage = 1
-                last_update_time = dt.datetime.now()
+            if keyboard.is_pressed("i"):
+                key_pressed = True
             elif keyboard.is_pressed("q"):
                 log.info("Exiting program...")
                 break

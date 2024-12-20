@@ -1,0 +1,9 @@
+{
+    "url": "opc.tcp://134.109.8.245:4840/",
+    "namespace": 2,
+    "nodes": {
+        "capture_image_1": "/NC/_N_CH_GD5_ACX/KAMERASTART",
+        "capture_image_2": "/NC/_N_CH_GD5_ACX/KAMERASTART2",
+        "results": "/NC/_N_CH_GD5_ACX/OBJEKTE"
+    }
+}

@@ -9,11 +9,13 @@ import json
 import logging
 import os
 import struct
+import subprocess  # noqa: S404
 import sys
 import time
 import tkinter as tk
 import warnings
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
+from dataclasses import dataclass
 from datetime import datetime
 from enum import IntEnum
 from pathlib import Path
@@ -24,8 +26,18 @@ import ids_peak_ipl.ids_peak_ipl as ids_ipl
 import numpy as np
 import opcua
 import open3d as o3d
-from harvesters.core import Harvester
-from ids_peak import ids_peak
+from harvesters.core import (
+    Buffer,
+    GenTL_GenericException,
+    Harvester,
+    TimeoutException,
+)
+
+with warnings.catch_warnings():
+    # IDS library has some of these
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    from ids_peak import ids_peak
+
 from matplotlib import pyplot as plt
 from PIL import Image
 
@@ -34,18 +46,32 @@ if TYPE_CHECKING:
 
 # ruff: noqa: T201, D101, D102, D103, D107, DOC201
 
-# IDS library has some of these
-warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+@dataclass
+class OpcuaNodes:
+    capture_image_1: str | int
+    capture_image_2: str | int
+    results: str | int
 
 
-class ServerParameters(TypedDict, total=True):
+@dataclass
+class OpcuaServerConfig:
     url: str
+    namespace: int
+    nodes: OpcuaNodes
+
+    def path(self, name_or_index: str | int, /) -> str:
+        """Convert node name to OPCUA node 'path'."""
+        if isinstance(name_or_index, str):
+            return f"ns={self.namespace};s={name_or_index}"
+        return f"ns={self.namespace};i={name_or_index:d}"
 
 
 class CameraParameters(TypedDict, total=True):
     auto_exposure: bool
     exposure_time: int
     image_size: int
+    save_dir: Path
 
 
 class EvalParameters(TypedDict, total=True):
@@ -78,21 +104,16 @@ class AnalysisResult(TypedDict, total=True):
 
 
 class Gui:
-    def __init__(  # noqa: PLR0913, PLR0915, PLR0917
+    def __init__(  # noqa: PLR0915
         self,
-        connect_to_server: Callable[[ServerParameters], None],
-        server_parameters: ServerParameters,
-        acquire_image: Callable[[CameraParameters], Path],
+        capture_image: Callable[[CameraParameters], Path],
         camera_parameters: CameraParameters,
         acquire_point_cloud: Callable[[], object] | None,
         evaluate_image: Callable[[Path, EvalParameters], EvalResult],
         eval_parameters: EvalParameters,
     ) -> None:
         """Initialize GUI."""
-        self.connect_to_server = connect_to_server
-        self.server_parameters = server_parameters
-
-        self.acquire_image = acquire_image
+        self.capture_image = capture_image
         self.camera_parameters = camera_parameters
         self.last_image_file: Path | None = None
 
@@ -120,8 +141,8 @@ class Gui:
         self.camera_tab_frame.columnconfigure(2, weight=1)
         self.acquire_ids_image_button = tk.Button(
             self.camera_tab_frame,
-            command=self.acquire_and_display,
-            text="Acquire camera image",
+            command=self.capture_and_display,
+            text="Capture camera image",
         )
         self.acquire_ids_image_button.grid(row=0, column=0, columnspan=5)
         self.exposure_label = tk.Label(self.camera_tab_frame, text="ExposureMode:")
@@ -230,18 +251,6 @@ class Gui:
         # Server tab stuff
         self.server_tab_frame.rowconfigure(1, weight=1)
         self.server_tab_frame.columnconfigure(1, weight=1)
-        self.server_label = tk.Label(self.server_tab_frame, text="OPCUA server URL:")
-        self.server_label.grid(row=0, column=0, columnspan=1)
-        self.entry_server_url = tk.Entry(self.server_tab_frame, width=50)
-        self.entry_server_url.insert(0, "opc.tcp://localhost:4840/freeopcua/server/")
-        self.entry_server_url.bind("<Return>", self.update_server_parameters)
-        self.entry_server_url.grid(sticky=tk.E + tk.N + tk.W + tk.S, row=0, column=1, columnspan=3)
-        self.button_connect_to_server = tk.Button(
-            self.server_tab_frame,
-            text="Connect",
-            command=lambda: self.connect_to_server(self.server_parameters),
-        )
-        self.button_connect_to_server.grid(row=0, column=4, columnspan=1)
 
         self.textbox_server_tab = tk.Text(self.server_tab_frame, height=13, width=90)
         self.textbox_server_tab.grid(
@@ -275,10 +284,10 @@ class Gui:
             return True
         return 0 <= int(value_if_allowed) <= 100  # noqa: PLR2004
 
-    def acquire_and_display(self) -> None:
-        """Acquire new image and display."""
+    def capture_and_display(self) -> None:
+        """Capture new image and display."""
         try:
-            self.last_image_file = self.acquire_image(self.camera_parameters)
+            self.last_image_file = self.capture_image(self.camera_parameters)
         except (ids_peak.Exception, ids_ipl.Exception):
             return
         self.display_image(self.last_image_file)
@@ -353,14 +362,6 @@ class Gui:
         self.update_camera_textbox("ExposureTime:" + str(self.camera_parameters["exposure_time"]))
         self.update_camera_textbox("ImageSize:" + str(self.camera_parameters["image_size"]))
 
-    def update_server_parameters(self, _evt: tk.Event[Any] | None = None) -> None:
-        try:
-            var = self.entry_server_url.get()
-            self.server_parameters["url"] = var
-            self.update_server_textbox(f"Server url set to: {var}")
-        except ValueError:
-            self.update_server_textbox("Enter a valid server url.")
-
     def update_eval_parameters(self, _evt: tk.Event[Any] | None = None) -> None:
         try:
             var = int(self.entry_detection_threshold.get())
@@ -379,7 +380,7 @@ class Gui:
         if isinstance(img, Path):
             img = Image.open(img)
         plt.imshow(img)
-        plt.show()
+        plt.show(block=False)
 
     @staticmethod
     def save_and_display_image(
@@ -414,9 +415,8 @@ class Gui:
         # Plot the array
         plt.imshow(array, vmin=vmin, vmax=vmax)
         plt.colorbar()  # Optionally add a colorbar
-        plt.title("Plot of the array")
-        plt.show()
-        plt.close()
+        plt.title("Plot of the height map")
+        plt.show(block=False)
 
     def show_last_intensity_map(self) -> None:
         if self.point_cloud_data is None:
@@ -433,9 +433,8 @@ class Gui:
         # Plot the array
         plt.imshow(array, cmap="gray", vmin=vmin, vmax=vmax)
         plt.colorbar()  # Optionally add a colorbar
-        plt.title("Plot of the array")
-        plt.show()
-        plt.close()
+        plt.title("Plot of the intensity map")
+        plt.show(block=False)
 
     def show_last_point_cloud(self) -> None:
         if self.point_cloud_data is None:
@@ -464,86 +463,120 @@ class Gui:
 
 
 class OpcuaClient:
-    def __init__(self) -> None:
+    def __init__(self, config: OpcuaServerConfig) -> None:
+        self.log = logging.getLogger().getChild("opcua_client")
         self.console: Callable[[str], None] = lambda _s: None
         self.client: opcua.Client | None = None
+        self.config = config
 
-    def connect_to_server(self, params: ServerParameters) -> None:
-        log = logging.getLogger().getChild("opcua_client")
-        log.info("Trying to establish connection with server %s", params["url"])
+    def connect_to_server(self, username: str | None = None, password: str | None = None) -> bool:
+        self.log.info("Trying to establish connection with server %s", self.config.url)
         try:
-            self.client = opcua.Client(params["url"])
+            self.client = opcua.Client(self.config.url)
+            if username is not None:
+                self.client.set_user(username)
+            if password is not None:
+                self.client.set_password(password)
             self.client.connect()
-            self.console("Connected to server.")
-        except OSError:
+        except OSError as exc:
             self.client = None
-            log.info("Server connection failed.")
+            self.log.info("Server connection failed: %s", exc)
             self.console("Server connection failed.")
+            return False
+        self.log.info("Connected to server")
+        self.console("Connected to server.")
+        return True
 
     @property
     def is_connected(self) -> bool:
         return self.client is not None
 
     @property
-    def acquire_image_node(self) -> opcua.Node:
+    def _capture_image_1_node(self) -> opcua.Node:
         if self.client is None:
             msg = "Client not connected to server"
             raise ValueError(msg)
-        return self.client.get_node("ns = 2; i = 2")
+        return self.client.get_node(self.config.path(self.config.nodes.capture_image_1))
 
     @property
-    def acquire_image(self) -> int:
+    def capture_image_1(self) -> bool:
         if self.client is None:
-            return 0
-        return cast(int, self.acquire_image_node.get_value())
+            return False
+        return cast(bool, self._capture_image_1_node.get_value())
 
-    @acquire_image.setter
-    def acquire_image(self, value: int) -> None:
+    @capture_image_1.setter
+    def capture_image_1(self, value: bool) -> None:
         if self.client is None:
             return
-        self.acquire_image_node.set_value(value)
+        self._capture_image_1_node.set_value(
+            opcua.ua.DataValue(opcua.ua.Variant(value, opcua.ua.VariantType.Byte))
+        )
 
     @property
-    def image_acquired_node(self) -> opcua.Node:
+    def _capture_image_2_node(self) -> opcua.Node:
         if self.client is None:
             msg = "Client not connected to server"
             raise ValueError(msg)
-        return self.client.get_node("ns = 2; i = 3")
+        return self.client.get_node(self.config.path(self.config.nodes.capture_image_2))
 
     @property
-    def image_acquired(self) -> int:
+    def capture_image_2(self) -> bool:
         if self.client is None:
-            return 0
-        return cast(int, self.image_acquired_node.get_value())
+            return False
+        return cast(bool, self._capture_image_2_node.get_value())
 
-    @image_acquired.setter
-    def image_acquired(self, value: int) -> None:
+    @capture_image_2.setter
+    def capture_image_2(self, value: bool) -> None:
         if self.client is None:
             return
-        self.image_acquired_node.set_value(value)
+        self._capture_image_2_node.set_value(
+            opcua.ua.DataValue(opcua.ua.Variant(value, opcua.ua.VariantType.Byte))
+        )
 
     @property
-    def results_node(self) -> opcua.Node:
+    def _results_node(self) -> opcua.Node:
         if self.client is None:
             msg = "Client not connected to server"
             raise ValueError(msg)
-        return self.client.get_node("ns = 2; i = 4")
+        return self.client.get_node(self.config.path(self.config.nodes.results))
 
     @property
     def results(self) -> str:
         if self.client is None:
             return ""
-        return cast(str, self.image_acquired_node.get_value())
+        return cast(str, self._results_node.get_value())
 
     @results.setter
     def results(self, value: str) -> None:
         if self.client is None:
             return
-        self.results_node.set_value(value)
+        self._results_node.set_value(
+            opcua.ua.DataValue(opcua.ua.Variant(value, opcua.ua.VariantType.String))
+        )
+
+    def close(self) -> None:
+        if self.client is None:
+            return
+        try:
+            self.client.disconnect()
+        except (OSError, ImportError):  # ImportError happens during python shutdown sometimes
+            return
+
+    def __del__(self) -> None:
+        self.close()
+
+
+@dataclass
+class WenglorConfig:
+    save_dir: Path
+    producer_file: Path = Path("mvGenTLProducer.cti")
+    server_software: Path | None = (
+        None if sys.platform != "win32" else Path("ShapeDriveGigEInterface.exe")
+    )
 
 
 class Wenglor:
-    def __init__(self, producer_file: str | Path = Path("mvGenTLProducer.cti")) -> None:
+    def __init__(self, config: WenglorConfig) -> None:
         """Initialize Wenglor Sensor.
 
         Raises:
@@ -551,15 +584,22 @@ class Wenglor:
         """
         self.console: Callable[[str], None] = lambda _s: None
         self.log = logging.getLogger().getChild("wenglor")
-        # TODO: Start GigE software automatically?
-        # script_path = "start_GigE_server.bat"  # noqa: ERA001
-        # process = subprocess.Popen(['bash', '-c', script_path], shell = True)  # noqa: ERA001
+        self.config = config
+        if config.server_software:
+            # TODO: GigE server network ip
+            self.server_process: subprocess.Popen[bytes] | None = subprocess.Popen([  # noqa: S603
+                str(config.server_software),
+                "-s",
+                "???",
+            ])
+        else:
+            self.server_process = None
         h = Harvester()
-        h.add_file(str(producer_file))
+        h.add_file(str(config.producer_file))
         h.update()
-        self.log.debug("Devices: %s", h.device_info_list)
+        self.log.debug("GigE devices: %s", h.device_info_list)
         self.ia = h.create()
-        self.point_cloud_data: None = None
+        self.point_cloud_data: Buffer | None = None
 
     def acquire_point_cloud(self) -> None:
         self.console("Acquiring point cloud...")
@@ -568,15 +608,46 @@ class Wenglor:
             self.ia.start()
             self.point_cloud_data = self.ia.fetch(timeout=20)
             self.ia.stop()
-            self.console("Acquired point cloud.")
-            self.log.info("Acquired point cloud.")
-        except:
+        except (TimeoutException, GenTL_GenericException):
             self.log.exception("Acquiring point cloud failed.")
             self.console("Acquiring point cloud failed.")
+            return
+        self.console("Acquired point cloud.")
+        self.log.info("Acquired point cloud.")
 
-    def __del__(self) -> None:
+    def save_point_cloud(self) -> None:
+        """Save last point cloud to file."""
+        if self.point_cloud_data is None:
+            return
+        pc_component = self.point_cloud_data.payload.components[1]
+        mat_3d = pc_component.data.reshape(
+            pc_component.height, pc_component.width, int(pc_component.num_components_per_pixel)
+        )
+        x = mat_3d[:, :, 0].flatten()
+        y = mat_3d[:, :, 1].flatten()
+        z = mat_3d[:, :, 2].flatten()
+        pc_data = np.vstack((x, y, z)).T
+        now = datetime.now()
+        self.config.save_dir.mkdir(parents=True, exist_ok=True)
+        file_name = self.config.save_dir / ("pc_" + now.strftime("%Y-%m-%d_%H-%M-%S") + ".npy")
+        np.save(file_name, pc_data)
+
+    def close(self) -> None:
         if hasattr(self, "ia"):
             self.ia.destroy()
+        if self.server_process is not None:
+            # SIGTERM first
+            self.server_process.terminate()
+            # Wait a second and kill forcefully if it fails
+            try:
+                self.server_process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                # SIGKILL if not successful, does nothing else on windows
+                if sys.platform != "win32":
+                    self.server_process.kill()
+
+    def __del__(self) -> None:
+        self.close()
 
 
 class IdsCamera:
@@ -613,7 +684,7 @@ class IdsCamera:
             raise
 
     # IDS image acquisition
-    def acquire_image(self, params: CameraParameters) -> Path:
+    def capture_image(self, params: CameraParameters) -> Path:
         self.console("Acquiring image...")
         self.log.info("Acquiring image...")
         try:
@@ -656,8 +727,9 @@ class IdsCamera:
             ))
 
             # Save the image as JPEG
-            current_time = datetime.now()
-            file_name = Path(current_time.strftime("%Y-%m-%d_%H-%M-%S") + ".jpg")
+            now = datetime.now()
+            params["save_dir"].mkdir(parents=True, exist_ok=True)
+            file_name = params["save_dir"] / (now.strftime("%Y-%m-%d_%H-%M-%S") + ".jpg")
             resized_image.save(str(file_name), "JPEG")
             self.console("Acquired camera image.")
             self.log.info("Acquired camera image.")
@@ -675,7 +747,7 @@ class MockCamera:
         self.log = logging.getLogger().getChild("ids.mock")
         self.last_image_file: Path = Path("testimage.jpg")
 
-    def acquire_image(self, _params: CameraParameters) -> Path:
+    def capture_image(self, _params: CameraParameters) -> Path:
         self.log.info("Acquiring dummy image.")
         self.console("Acquiring dummy image.")
         return self.last_image_file
@@ -877,11 +949,6 @@ class MockEvaluation:
         return ret
 
 
-class AcquireStages(IntEnum):
-    Camera = 1
-    PointCloud = 2
-
-
 def check_acquire_and_evaluate(
     gui: Gui,
     client: OpcuaClient,
@@ -890,25 +957,26 @@ def check_acquire_and_evaluate(
     wenglor: Wenglor | None,
 ) -> None:
     """Poll the OPCUA server and do new analysis if requested."""
-    log = logging.getLogger().getChild("opcua")
+    log = logging.getLogger().getChild("opcua_client")
     if not client.is_connected:
         log.info("Not connected to OPCUA server.")
         return
     log.info("Checking OPCUA server...")
     # Read the value of the variable
-    acquire_image = client.acquire_image
-    image_acquired = client.image_acquired
-    log.debug("'acquireImage' = %s", acquire_image)
-    log.debug("'imageAcquired' = %s", image_acquired)
+    capture_image_1 = client.capture_image_1
+    capture_image_2 = client.capture_image_2
+    log.debug("'capture_image_1' = %s", capture_image_1)
+    log.debug("'capture_image_2' = %s", capture_image_2)
     # Check which stage we need to execute
-    match acquire_image:
-        case AcquireStages.Camera:
-            with contextlib.suppress(ids_peak.Exception, ids_ipl.Exception):
-                camera.acquire_image(gui.camera_parameters)
-        case AcquireStages.PointCloud if wenglor is not None:
+    if capture_image_1:
+        with contextlib.suppress(ids_peak.Exception, ids_ipl.Exception):
+            camera.capture_image(gui.camera_parameters)
+        # Reset flag to signal completion
+        client.capture_image_1 = False
+    if capture_image_2:
+        if wenglor is not None:
             wenglor.acquire_point_cloud()
-    # Evaluate the images if we executed the last stage
-    if acquire_image == max(AcquireStages):
+        # Evaluate the images if we executed the last stage
         if camera.last_image_file is None:
             log.warning("Cannot evaluate, camera image is missing!")
         else:
@@ -920,8 +988,8 @@ def check_acquire_and_evaluate(
                 [AnalysisResult(x=0, y=0, z=0, r=0, p=0, yaw=0, t=ObjectType.Unknown, pr=100)],
                 separators=(",", ":"),
             )
-    # Signal completion to server
-    client.image_acquired = 1
+        # Reset flag to signal completion
+        client.capture_image_2 = False
 
 
 def _setup_logging() -> None:
@@ -963,73 +1031,119 @@ def _parse_args(args: list[str]) -> Namespace:
         default=1.0,
         help="Interval to check OPCUA server for updates (in sec).",
     )
+    parser.add_argument(
+        "--opcua-config",
+        type=Path,
+        help="OPCUA server config",
+    )
+    parser.add_argument(
+        "--opcua-username",
+        help="OPCUA server username",
+    )
+    parser.add_argument(
+        "--opcua-password",
+        help="OPCUA server password",
+    )
+    parser.add_argument(
+        "--save-dir",
+        type=Path,
+        default=Path.cwd() / "results",
+        help="Save directory",
+    )
     return parser.parse_args(args)
 
 
-def main(args_: list[str]) -> None:
+def main(args_: list[str]) -> None:  # noqa: C901, PLR0912, PLR0915
     log = logging.getLogger()
     _setup_logging()
     args = _parse_args(args_)
     if args.debug:
         log.setLevel(logging.DEBUG)
 
-    server_parameters = ServerParameters(url="opc.tcp://localhost:4840/freeopcua/server/")
-    camera_parameters = CameraParameters(auto_exposure=True, exposure_time=1000, image_size=50)
+    if not args.local_only:
+        if args.opcua_config:
+            with args.opcua_config.open("r", encoding="utf-8") as f:
+                config = json.load(f)
+                nodes = OpcuaNodes(**config.pop("nodes"))
+                opcua_server_config = OpcuaServerConfig(**config, nodes=nodes)
+        else:
+            # Use local server config if it is not provided
+            log.info("Using local OPCUA test server config")
+            opcua_server_config = OpcuaServerConfig(
+                url="opc.tcp://localhost:4840/freeopcua/server/",
+                namespace=2,
+                nodes=OpcuaNodes(capture_image_1=2, capture_image_2=3, results=4),
+            )
+        client: OpcuaClient | None = OpcuaClient(config=opcua_server_config)
+        # Connect early to fail early
+        if client is not None and not client.connect_to_server(
+            args.opcua_username, args.opcua_password
+        ):
+            return
+    else:
+        client = None
+    camera_parameters = CameraParameters(
+        auto_exposure=True, exposure_time=1000, image_size=50, save_dir=args.save_dir
+    )
+    wenglor_config = WenglorConfig(save_dir=args.save_dir)
     eval_parameters = EvalParameters(probability_threshold=0.75)
 
-    client = OpcuaClient()
     wenglor: Wenglor | None = None
     try:
-        wenglor = Wenglor()
-    except ValueError:
-        log.exception("Cannot connect Wenglor device:")
-        if not args.allow_missing_hardware:
-            raise
+        try:
+            wenglor = Wenglor(config=wenglor_config)
+        except ValueError:
+            log.exception("Cannot connect Wenglor device:")
+            if not args.allow_missing_hardware:
+                return
 
-    try:
-        libdenk: Libdenk | MockEvaluation = Libdenk(token=args.token.read_text().strip())
-    except OSError:
-        log.exception("Cannot init libdenk:")
-        if args.allow_missing_hardware:
-            libdenk = MockEvaluation()
-        else:
-            raise
+        try:
+            libdenk: Libdenk | MockEvaluation = Libdenk(token=args.token.read_text().strip())
+        except OSError:
+            log.exception("Cannot init libdenk:")
+            if args.allow_missing_hardware:
+                libdenk = MockEvaluation()
+            else:
+                return
 
-    try:
-        camera: IdsCamera | MockCamera = IdsCamera()
-    except (ids_peak.Exception, ids_ipl.Exception):
-        log.exception("Cannot connect IDS camera:")
-        if args.allow_missing_hardware:
-            camera = MockCamera()
-        else:
-            raise
+        try:
+            camera: IdsCamera | MockCamera = IdsCamera()
+        except (ids_peak.Exception, ids_ipl.Exception, IndexError):
+            log.exception("Cannot connect IDS camera:")
+            if args.allow_missing_hardware:
+                camera = MockCamera()
+            else:
+                return
 
-    gui = Gui(
-        client.connect_to_server,
-        server_parameters,
-        camera.acquire_image,
-        camera_parameters,
-        wenglor.acquire_point_cloud if wenglor else None,
-        libdenk.evaluate_image,
-        eval_parameters,
-    )
-    # Need to wire up the "console" (outputs) after creating the gui
-    client.console = gui.update_server_textbox
-    camera.console = gui.update_camera_textbox
-    if wenglor:
-        wenglor.console = gui.update_wenglor_textbox
-    libdenk.console = gui.update_ai_textbox
-    # Only enable server polling if not disabled
-    if not args.local_only:
-        client.connect_to_server(server_parameters)
+        gui = Gui(
+            camera.capture_image,
+            camera_parameters,
+            wenglor.acquire_point_cloud if wenglor else None,
+            libdenk.evaluate_image,
+            eval_parameters,
+        )
+        # Need to wire up the "console" (outputs) after creating the gui
+        if client:
+            client.console = gui.update_server_textbox
+        camera.console = gui.update_camera_textbox
+        if wenglor:
+            wenglor.console = gui.update_wenglor_textbox
+        libdenk.console = gui.update_ai_textbox
+        # Only enable server polling if not disabled
+        if not args.local_only and client:
 
-        def mainloop() -> None:
-            check_acquire_and_evaluate(gui, client, libdenk, camera, wenglor)
+            def mainloop() -> None:
+                check_acquire_and_evaluate(gui, client, libdenk, camera, wenglor)
+                gui.root.after(int(args.check_interval * 1000), mainloop)
+
             gui.root.after(int(args.check_interval * 1000), mainloop)
 
-        gui.root.after(int(args.check_interval * 1000), mainloop)
-
-    gui.root.mainloop()
+        gui.root.mainloop()
+    finally:
+        if client:
+            client.close()
+        if wenglor:
+            wenglor.close()
 
 
 if __name__ == "__main__":

@@ -24,3 +24,5 @@ Software_VisionApp*
 
 models
 token.txt
+results
+*.jpg

@@ -1,0 +1,9 @@
+{
+    "url": "opc.tcp://10.54.128.89:16448/",
+    "namespace": 5,
+    "nodes": {
+        "capture_image_1": "MotionDeviceSystem.Controllers.Controller_1.ProcessData.CameraInterface.PositionReached",
+        "capture_image_2": "MotionDeviceSystem.Controllers.Controller_1.ProcessData.CameraInterface.Position2Reached",
+        "results": "TODO"
+    }
+}

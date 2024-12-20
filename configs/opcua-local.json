@@ -1,0 +1,9 @@
+{
+    "url": "opc.tcp://localhost:4840/freeopcua/server/",
+    "namespace": 2,
+    "nodes": {
+        "capture_image_1": 2,
+        "capture_image_2": 3,
+        "results": 4
+    }
+}

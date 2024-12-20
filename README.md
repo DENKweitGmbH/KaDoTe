@@ -38,6 +38,8 @@ Installing packages via conda instead of uv should work as well, but might not b
 uv run client.py
 ```
 
+See `uv run client.py --help` for available parameters.
+
 ## OPCUA Test Server
 
 Test the client implementation by running a mock server:
@@ -47,6 +49,8 @@ uv run server.py
 ```
 
 The mock server requests an image to be taken every x seconds or by user interaction (pressing `i`).
+
+NOTE: The test server and client currently use normal string type for the result node instead of array of string!
 
 ## IDS-Camera
 
