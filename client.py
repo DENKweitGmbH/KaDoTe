@@ -985,9 +985,12 @@ def check_acquire_and_evaluate(
         client.capture_image_1 = False
     if capture_image_2:
         if wenglor is not None:
-            wenglor.acquire_point_cloud()
-            plt.close()
-            gui.show_last_height_map()
+            try:
+                gui.point_cloud_data = wenglor.acquire_point_cloud()
+                plt.close()
+                gui.show_last_height_map()
+            except BaseException:
+                log.exception("Error when acquiring point cloud:")
         # Evaluate the images if we executed the last stage
         if camera.last_image_file is None:
             log.warning("Cannot evaluate, camera image is missing!")
