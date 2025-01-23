@@ -109,7 +109,7 @@ class Gui:
         self,
         capture_image: Callable[[CameraParameters], Path],
         camera_parameters: CameraParameters,
-        acquire_point_cloud: Callable[[], object] | None,
+        acquire_point_cloud: Callable[[], Buffer | None] | None,
         evaluate_image: Callable[[Path, EvalParameters], EvalResult],
         eval_parameters: EvalParameters,
     ) -> None:
@@ -123,7 +123,7 @@ class Gui:
 
         self.evaluate_image = evaluate_image
         self.eval_parameters = eval_parameters
-        self.point_cloud_data: Any = None
+        self.point_cloud_data: Buffer | None = None
         # Build Gui
         self.root = tk.Tk()
         self.root.title("DENKweit KaDoTe")
@@ -590,7 +590,6 @@ class Wenglor:
         self.log = logging.getLogger().getChild("wenglor")
         self.config = config
         if config.server_software:
-            # TODO: GigE server network ip
             self.server_process: subprocess.Popen[bytes] | None = subprocess.Popen([  # noqa: S603
                 str(config.server_software),
                 "-s",
@@ -611,7 +610,7 @@ class Wenglor:
         self.ia = self.harvester.create()
         self.point_cloud_data: Buffer | None = None
 
-    def acquire_point_cloud(self) -> None:
+    def acquire_point_cloud(self) -> Buffer | None:
         self.console("Acquiring point cloud...")
         self.log.info("Acquiring point cloud...")
         try:
@@ -621,9 +620,10 @@ class Wenglor:
         except (TimeoutException, GenTL_GenericException):
             self.log.exception("Acquiring point cloud failed.")
             self.console("Acquiring point cloud failed.")
-            return
+            return None
         self.console("Acquired point cloud.")
         self.log.info("Acquired point cloud.")
+        return self.point_cloud_data
 
     def save_point_cloud(self) -> None:
         """Save last point cloud to file."""
@@ -986,6 +986,7 @@ def check_acquire_and_evaluate(
     if capture_image_2:
         if wenglor is not None:
             wenglor.acquire_point_cloud()
+            plt.close()
             gui.show_last_height_map()
         # Evaluate the images if we executed the last stage
         if camera.last_image_file is None:
@@ -993,6 +994,7 @@ def check_acquire_and_evaluate(
         else:
             # TODO: Do something with the point cloud?
             image, w, h, c = libdenk.evaluate_image(camera.last_image_file, gui.eval_parameters)
+            plt.close()
             gui.save_and_display_image(image, w, h, c, camera.last_image_file)
             # TODO: Create actual results here
             client.results = json.dumps(
