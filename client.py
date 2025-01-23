@@ -572,6 +572,9 @@ class OpcuaClient:
 class WenglorConfig:
     save_dir: Path
     producer_file: Path = Path("mvGenTLProducer.cti")
+    server_ip: str = "192.168.100.2"
+    sensor_ip: str = "192.168.100.1"
+    network_interface_index: int = 0
     server_software: Path | None = (
         None
         if sys.platform != "win32"
@@ -593,11 +596,11 @@ class Wenglor:
             self.server_process: subprocess.Popen[bytes] | None = subprocess.Popen([  # noqa: S603
                 str(config.server_software),
                 "-s",
-                "192.168.100.2",
+                config.server_ip,
                 "-i",
-                "192.168.100.1",
+                config.sensor_ip,
                 "-n",
-                "0",
+                str(config.network_interface_index),
             ])
             # Wait for the server to come online
             sleep(3.0)
@@ -608,15 +611,16 @@ class Wenglor:
         self.harvester.update()
         self.log.debug("GigE devices: %s", self.harvester.device_info_list)
         self.ia = self.harvester.create()
+        self.ia.start()
         self.point_cloud_data: Buffer | None = None
 
     def acquire_point_cloud(self) -> Buffer | None:
         self.console("Acquiring point cloud...")
         self.log.info("Acquiring point cloud...")
         try:
-            self.ia.start()
+            if self.point_cloud_data is not None:
+                self.point_cloud_data.queue()
             self.point_cloud_data = self.ia.fetch(timeout=20)
-            self.ia.stop()
         except (TimeoutException, GenTL_GenericException):
             self.log.exception("Acquiring point cloud failed.")
             self.console("Acquiring point cloud failed.")
@@ -644,7 +648,13 @@ class Wenglor:
 
     def close(self) -> None:
         if hasattr(self, "ia"):
-            self.ia.destroy()
+            if getattr(self, "point_cloud_data", None) is not None:
+                with contextlib.suppress(Exception):
+                    self.point_cloud_data.queue()  # type: ignore[union-attr]
+            with contextlib.suppress(Exception):
+                self.ia.stop()
+            with contextlib.suppress(Exception):
+                self.ia.destroy()
         if getattr(self, "server_process", None) is not None:
             # SIGTERM first
             self.server_process.terminate()  # type: ignore[union-attr]
@@ -985,19 +995,15 @@ def check_acquire_and_evaluate(
         client.capture_image_1 = False
     if capture_image_2:
         if wenglor is not None:
-            try:
-                gui.point_cloud_data = wenglor.acquire_point_cloud()
-                plt.close()
-                gui.show_last_height_map()
-            except BaseException:
-                log.exception("Error when acquiring point cloud:")
+            gui.point_cloud_data = wenglor.acquire_point_cloud()
+            plt.close()
+            gui.show_last_intensity_map()
         # Evaluate the images if we executed the last stage
         if camera.last_image_file is None:
             log.warning("Cannot evaluate, camera image is missing!")
         else:
             # TODO: Do something with the point cloud?
             image, w, h, c = libdenk.evaluate_image(camera.last_image_file, gui.eval_parameters)
-            plt.close()
             gui.save_and_display_image(image, w, h, c, camera.last_image_file)
             # TODO: Create actual results here
             client.results = json.dumps(
