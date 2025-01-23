@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import IntEnum
 from pathlib import Path
+from time import sleep
 from tkinter import ttk
 from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict, cast
 
@@ -116,6 +117,7 @@ class Gui:
         self.capture_image = capture_image
         self.camera_parameters = camera_parameters
         self.last_image_file: Path | None = None
+        self.do_display_image = True
 
         self.acquire_point_cloud = acquire_point_cloud if acquire_point_cloud else lambda: None
 
@@ -373,18 +375,18 @@ class Gui:
         except ValueError:
             self.update_ai_textbox("Enter a value between 1 and 100.")
 
-    @staticmethod
-    def display_image(img: Image.Image | Path) -> None:
+    def display_image(self, img: Image.Image | Path) -> None:
         """Display the image using matplotlib."""
+        if not self.do_display_image:
+            return
         plt.figure(figsize=(15, 15))
         if isinstance(img, Path):
             img = Image.open(img)
         plt.imshow(img)
         plt.show(block=False)
 
-    @staticmethod
     def save_and_display_image(
-        img_buffer: bytes, img_w: int, img_h: int, img_c: int, image_file: str | Path
+        self, img_buffer: bytes, img_w: int, img_h: int, img_c: int, image_file: str | Path
     ) -> None:
         """Display the output image."""
         array = np.frombuffer(img_buffer, dtype=np.uint8, count=(img_w * img_h * img_c), offset=0)
@@ -396,7 +398,7 @@ class Gui:
         insertion = "_evaluated"
         new_filename = f"{name}{insertion}{ext}"
         img.save(new_filename, "JPEG")
-        Gui.display_image(img)
+        self.display_image(img)
 
     def show_last_height_map(self) -> None:
         if self.point_cloud_data is None:
@@ -592,15 +594,21 @@ class Wenglor:
             self.server_process: subprocess.Popen[bytes] | None = subprocess.Popen([  # noqa: S603
                 str(config.server_software),
                 "-s",
-                "???",
+                "192.168.100.2",
+                "-i",
+                "192.168.100.1",
+                "-n",
+                "0",
             ])
+            # Wait for the server to come online
+            sleep(3.0)
         else:
             self.server_process = None
-        h = Harvester()
-        h.add_file(str(config.producer_file))
-        h.update()
-        self.log.debug("GigE devices: %s", h.device_info_list)
-        self.ia = h.create()
+        self.harvester = Harvester()
+        self.harvester.add_file(str(config.producer_file))
+        self.harvester.update()
+        self.log.debug("GigE devices: %s", self.harvester.device_info_list)
+        self.ia = self.harvester.create()
         self.point_cloud_data: Buffer | None = None
 
     def acquire_point_cloud(self) -> None:
@@ -978,6 +986,7 @@ def check_acquire_and_evaluate(
     if capture_image_2:
         if wenglor is not None:
             wenglor.acquire_point_cloud()
+            gui.show_last_height_map()
         # Evaluate the images if we executed the last stage
         if camera.last_image_file is None:
             log.warning("Cannot evaluate, camera image is missing!")
@@ -1026,6 +1035,11 @@ def _parse_args(args: list[str]) -> Namespace:
         "--allow-missing-hardware",
         action="store_true",
         help="Allow the script to continue without any hardware connected for local testing. (Uses testimage.jpg).",
+    )
+    parser.add_argument(
+        "--dont-show-image",
+        action="store_true",
+        help="Do not popup the image after evaluation",
     )
     parser.add_argument(
         "--check-interval",
@@ -1124,6 +1138,8 @@ def main(args_: list[str]) -> None:  # noqa: C901, PLR0912, PLR0915
             libdenk.evaluate_image,
             eval_parameters,
         )
+        if args.dont_show_image:
+            gui.do_display_image = False
         # Need to wire up the "console" (outputs) after creating the gui
         if client:
             client.console = gui.update_server_textbox
