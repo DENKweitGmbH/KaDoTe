@@ -571,7 +571,9 @@ class WenglorConfig:
     save_dir: Path
     producer_file: Path = Path("mvGenTLProducer.cti")
     server_software: Path | None = (
-        None if sys.platform != "win32" else Path("ShapeDriveGigEInterface.exe")
+        None
+        if sys.platform != "win32"
+        else Path("ShapeDriveGigEInterface") / "ShapeDriveGigEInterface.exe"
     )
 
 
@@ -635,16 +637,16 @@ class Wenglor:
     def close(self) -> None:
         if hasattr(self, "ia"):
             self.ia.destroy()
-        if self.server_process is not None:
+        if getattr(self, "server_process", None) is not None:
             # SIGTERM first
-            self.server_process.terminate()
+            self.server_process.terminate()  # type: ignore[union-attr]
             # Wait a second and kill forcefully if it fails
             try:
-                self.server_process.wait(timeout=1)
+                self.server_process.wait(timeout=1)  # type: ignore[union-attr]
             except subprocess.TimeoutExpired:
                 # SIGKILL if not successful, does nothing else on windows
                 if sys.platform != "win32":
-                    self.server_process.kill()
+                    self.server_process.kill()  # type: ignore[union-attr]
 
     def __del__(self) -> None:
         self.close()
