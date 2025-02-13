@@ -47,12 +47,6 @@ extend-exclude = ["script_OPCUA_Sara.py", "Client_TUC.py"]
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
-    # missing-type-self: mypy infers self type 
-    # Rule removed in ruff v0.2.0
-    "ANN101",
-    # missing-type-cls: mypy infers self type 
-    # Rule removed in ruff v0.2.0
-    "ANN102",
     # undocumented-magic-method: Annoying to document all __str__ etc. overrides
     "D105",
     # Disables timezone related warnings. Should probably not be disabled.

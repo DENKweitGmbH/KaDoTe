@@ -1,0 +1,25 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://denkweit.de/schemas/KaDoTe/wenglor-config.schema.json",
+    "title": "KaDoTe Wenglor Depth Sensor Config",
+    "description": "Schema for KaDoTe Wenglor depth sensor configuration for DENKweit software.",
+    "type": "object",
+    "properties": {
+        "sensor_ip": {
+            "type": "string",
+            "comment": "Sensor IP address"
+        },
+        "server_ip": {
+            "type": "string",
+            "comment": "Server IP address"
+        },
+        "network_interface_index": {
+            "type": "integer",
+            "comment": "Index of network adapter"
+        },
+        "server_software": {
+            "type": "string",
+            "comment": "Path to ShapeDriverGigEInterface.exe"
+        }
+    }
+}

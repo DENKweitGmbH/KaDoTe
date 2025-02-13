@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://denkweit.de/schemas/KaDoTe/opcua-server-config.schema.json",
     "title": "KaDoTe OPCUA Server Config",
-    "description": "Schema for KaDoTe OPCUA server configuration for DENKweit software.",
+    "description": "Schema for KaDoTe OPCUA server configuration for DENKweit software. This basically is a name mapping for all the necessary nodes and the server url.",
     "type": "object",
     "properties": {
         "url": {

@@ -504,7 +504,7 @@ class OpcuaClient:
     def capture_image_1(self) -> bool:
         if self.client is None:
             return False
-        return cast(bool, self._capture_image_1_node.get_value())
+        return cast("bool", self._capture_image_1_node.get_value())
 
     @capture_image_1.setter
     def capture_image_1(self, value: bool) -> None:
@@ -525,7 +525,7 @@ class OpcuaClient:
     def capture_image_2(self) -> bool:
         if self.client is None:
             return False
-        return cast(bool, self._capture_image_2_node.get_value())
+        return cast("bool", self._capture_image_2_node.get_value())
 
     @capture_image_2.setter
     def capture_image_2(self, value: bool) -> None:
@@ -546,7 +546,7 @@ class OpcuaClient:
     def results(self) -> str:
         if self.client is None:
             return ""
-        return cast(str, self._results_node.get_value())
+        return cast("str", self._results_node.get_value())
 
     @results.setter
     def results(self, value: str) -> None:
@@ -578,7 +578,7 @@ class WenglorConfig:
     server_software: Path | None = (
         None
         if sys.platform != "win32"
-        else Path("ShapeDriveGigEInterface") / "ShapeDriveGigEInterface.exe"
+        else next(Path.cwd().rglob("ShapeDriveGigEInterface.exe"), None)
     )
 
 
@@ -1038,11 +1038,6 @@ def _parse_args(args: list[str]) -> Namespace:
         "--token", type=Path, default=Path("token.txt"), help="File containing model token"
     )
     parser.add_argument(
-        "--local-only",
-        action="store_true",
-        help="Disable periodic pulling from OPCUA server, limiting functionality.",
-    )
-    parser.add_argument(
         "--allow-missing-hardware",
         action="store_true",
         help="Allow the script to continue without any hardware connected for local testing. (Uses testimage.jpg).",
@@ -1053,21 +1048,32 @@ def _parse_args(args: list[str]) -> Namespace:
         help="Do not popup the image after evaluation",
     )
     parser.add_argument(
+        "--wenglor-config",
+        type=Path,
+        help="Wenglor depth sensor config file",
+    )
+    opcua_group = parser.add_argument_group("OPCUA")
+    opcua_group.add_argument(
+        "--local-only",
+        action="store_true",
+        help="Disable periodic pulling from OPCUA server, limiting functionality.",
+    )
+    opcua_group.add_argument(
         "--check-interval",
         type=float,
         default=1.0,
         help="Interval to check OPCUA server for updates (in sec).",
     )
-    parser.add_argument(
+    opcua_group.add_argument(
         "--opcua-config",
         type=Path,
-        help="OPCUA server config",
+        help="OPCUA server config file",
     )
-    parser.add_argument(
+    opcua_group.add_argument(
         "--opcua-username",
         help="OPCUA server username",
     )
-    parser.add_argument(
+    opcua_group.add_argument(
         "--opcua-password",
         help="OPCUA server password",
     )
@@ -1112,7 +1118,12 @@ def main(args_: list[str]) -> None:  # noqa: C901, PLR0912, PLR0915
     camera_parameters = CameraParameters(
         auto_exposure=True, exposure_time=1000, image_size=50, save_dir=args.save_dir
     )
-    wenglor_config = WenglorConfig(save_dir=args.save_dir)
+    if args.wenglor_config:
+        with args.opcua_config.open("r", encoding="utf-8") as f:
+            config = json.load(f)
+            wenglor_config = WenglorConfig(save_dir=args.save_dir, **config)
+    else:
+        wenglor_config = WenglorConfig(save_dir=args.save_dir)
     eval_parameters = EvalParameters(probability_threshold=0.75)
 
     wenglor: Wenglor | None = None
