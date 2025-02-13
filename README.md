@@ -55,7 +55,7 @@ options:
   --dont-show-image     Do not popup the image after evaluation (default: False)
   --wenglor-config WENGLOR_CONFIG
                         Wenglor depth sensor config file (default: None)
-  --save-dir SAVE_DIR   Save directory (default: /home/georg/Documents/denkweit/git/KadoTe/results)
+  --save-dir SAVE_DIR   Save directory (default ./results)
 
 OPCUA:
   --local-only          Disable periodic pulling from OPCUA server, limiting functionality. (default: False)
