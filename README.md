@@ -41,6 +41,32 @@ uv run client.py --opcua-config <path/to/opcua-config.json>
 See `uv run client.py --help` for available parameters:
 
 ```bash
+usage: client.py [-h] [--debug] [--logfile LOGFILE] [--token TOKEN] [--allow-missing-hardware] [--setup-mode] [--dont-show-image] [--wenglor-config WENGLOR_CONFIG] [--local-only]
+                 [--check-interval CHECK_INTERVAL] [--opcua-config OPCUA_CONFIG] [--opcua-username OPCUA_USERNAME] [--opcua-password OPCUA_PASSWORD] [--save-dir SAVE_DIR]
+
+options:
+  -h, --help            show this help message and exit
+  --debug               Verbose (debug) logging (default: False)
+  --logfile LOGFILE     Set logging output to file (default: None)
+  --token TOKEN         File containing model token (default: token.txt)
+  --allow-missing-hardware
+                        Allow the script to continue without any hardware connected for local testing. (Uses testimage.jpg). (default: False)
+  --setup-mode          Enter special mode for testing hardware connections and camera setup. Implies --debug, --allow-missing-harware and --local-only (default: False)
+  --dont-show-image     Do not popup the image after evaluation (default: False)
+  --wenglor-config WENGLOR_CONFIG
+                        Wenglor depth sensor config file (default: None)
+  --save-dir SAVE_DIR   Save directory (default: /home/georg/Documents/denkweit/git/KadoTe/results)
+
+OPCUA:
+  --local-only          Disable periodic pulling from OPCUA server, limiting functionality. (default: False)
+  --check-interval CHECK_INTERVAL
+                        Interval to check OPCUA server for updates (in sec). (default: 1.0)
+  --opcua-config OPCUA_CONFIG
+                        OPCUA server config file (default: None)
+  --opcua-username OPCUA_USERNAME
+                        OPCUA server username (default: None)
+  --opcua-password OPCUA_PASSWORD
+                        OPCUA server password (default: None)
 ```
 
 The most important options are:
@@ -50,7 +76,7 @@ The most important options are:
 
 ### Local Testing
 
-For local testing the options `--allow-missing-hardware`, `--local-only` and the OPCUA test server might be useful.
+For local testing the options `--setup-mode` (`--allow-missing-hardware` & `--local-only`) and the OPCUA test server might be useful.
 
 #### OPCUA Local Test Server
 
@@ -67,8 +93,7 @@ NOTE: The test server and client currently use normal string type for the result
 ## IDS-Camera
 
 * IDS Camera is controlled by `ids_peak` python library
-  * Needs to be installed: <https://en.ids-imaging.com/download-peak.html>
-* IDS Camera needs a Power-over-Ethernet (PoE) adapter
+  * Library needs to be installed: <https://en.ids-imaging.com/download-peak.html>
 
 ## Wenglor Depth Sensor
 

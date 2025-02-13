@@ -5,9 +5,13 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
+import datetime as dt
+import gzip
 import json
 import logging
+import logging.handlers
 import os
+import shutil
 import struct
 import subprocess  # noqa: S404
 import sys
@@ -402,6 +406,7 @@ class Gui:
 
     def show_last_height_map(self) -> None:
         if self.point_cloud_data is None:
+            self.update_wenglor_textbox("Missing data")
             return
         image_component = self.point_cloud_data.payload.components[1]
         _3d = image_component.data.reshape(
@@ -417,11 +422,12 @@ class Gui:
         # Plot the array
         plt.imshow(array, vmin=vmin, vmax=vmax)
         plt.colorbar()  # Optionally add a colorbar
-        plt.title("Plot of the height map")
+        plt.title("Height Map")
         plt.show(block=False)
 
     def show_last_intensity_map(self) -> None:
         if self.point_cloud_data is None:
+            self.update_wenglor_textbox("Missing data")
             return
         image_component = self.point_cloud_data.payload.components[0]
         _2d = image_component.data.reshape(
@@ -435,11 +441,12 @@ class Gui:
         # Plot the array
         plt.imshow(array, cmap="gray", vmin=vmin, vmax=vmax)
         plt.colorbar()  # Optionally add a colorbar
-        plt.title("Plot of the intensity map")
+        plt.title("Intensity map")
         plt.show(block=False)
 
     def show_last_point_cloud(self) -> None:
         if self.point_cloud_data is None:
+            self.update_wenglor_textbox("Missing data")
             return
         pointcloud_height_component = self.point_cloud_data.payload.components[1]
         _3d = pointcloud_height_component.data.reshape(
@@ -592,27 +599,49 @@ class Wenglor:
         self.console: Callable[[str], None] = lambda _s: None
         self.log = logging.getLogger().getChild("wenglor")
         self.config = config
-        if config.server_software:
-            self.server_process: subprocess.Popen[bytes] | None = subprocess.Popen([  # noqa: S603
-                str(config.server_software),
-                "-s",
-                config.server_ip,
-                "-i",
-                config.sensor_ip,
-                "-n",
-                str(config.network_interface_index),
-            ])
-            # Wait for the server to come online
-            sleep(3.0)
-        else:
-            self.server_process = None
+        self.server_process: subprocess.Popen[str] | None = None
+        self._start_server()
         self.harvester = Harvester()
         self.harvester.add_file(str(config.producer_file))
         self.harvester.update()
         self.log.debug("GigE devices: %s", self.harvester.device_info_list)
         self.ia = self.harvester.create()
+        self.log_node_maps()
         self.ia.start()
         self.point_cloud_data: Buffer | None = None
+
+    def _start_server(self, timeout: float = 5.0) -> None:
+        """Tries to start GigE Vision server."""
+        if not self.config.server_software:
+            return
+        self.server_process = subprocess.Popen(  # noqa: S603
+            [
+                str(self.config.server_software),
+                "-s",
+                self.config.server_ip,
+                "-i",
+                self.config.sensor_ip,
+                "-n",
+                str(self.config.network_interface_index),
+            ],
+            text=True,
+            bufsize=1,  # line buffered
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        # Wait for the server to come online
+        assert self.server_process.stdout is not None  # noqa: S101
+        time_started = dt.datetime.now()
+        while (
+            dt.datetime.now() - time_started
+        ).total_seconds() < timeout and self.server_process.poll() is None:
+            line = self.server_process.stdout.readline()
+            if "GigeServer is online" in line:
+                return
+
+    def log_node_maps(self) -> None:
+        """Log node maps."""
+        self.log.debug("Node Map: %s", dir(self.ia.remote_device.node_map))
 
     def acquire_point_cloud(self) -> Buffer | None:
         self.console("Acquiring point cloud...")
@@ -655,6 +684,8 @@ class Wenglor:
                 self.ia.stop()
             with contextlib.suppress(Exception):
                 self.ia.destroy()
+        if harvester := getattr(self, "harvester", None):
+            harvester.reset()
         if getattr(self, "server_process", None) is not None:
             # SIGTERM first
             self.server_process.terminate()  # type: ignore[union-attr]
@@ -1014,20 +1045,63 @@ def check_acquire_and_evaluate(
         client.capture_image_2 = False
 
 
-def _setup_logging() -> None:
+# See https://stackoverflow.com/questions/40150821/in-the-logging-modules-rotatingfilehandler-how-to-set-the-backupcount-to-a-pra
+class _RollingGzipFileHandler(logging.handlers.RotatingFileHandler):
+    """Similar to stdlib RotatingFileHandler, but does not delete old backups and newer logs have higher numbers."""
+
+    def __init__(self, filename: Path, maxBytes: int) -> None:  # noqa: N803
+        # Backup count is irrelevant since we provide a custom backup function
+        super().__init__(filename, backupCount=1, maxBytes=maxBytes)
+
+    def doRollover(self) -> None:  # noqa: N802
+        if self.stream:
+            self.stream.close()
+            self.stream = None  # type: ignore[assignment] # Copied from stdlib
+        # Custom rollover code starts here
+        fname = Path(self.baseFilename)
+        # Append a timestamp in the local timezone to the logfile name to ensure uniqueness
+        next_name = f"{fname.stem}_{dt.datetime.now(tz=dt.UTC).astimezone():%Y_%m_%d_%H_%M_%S}{fname.suffix}.gz"
+        with (
+            open(self.baseFilename, "rb") as original_log,  # noqa: PTH123
+            gzip.open(next_name, "wb") as gzipped_log,
+        ):
+            shutil.copyfileobj(original_log, gzipped_log)
+        os.remove(self.baseFilename)  # noqa: PTH107
+        # We don't need to call self.rotate, because the old logfile is deleted
+        # Custom rollover code ends here
+        if not self.delay:
+            self.stream = self._open()
+
+
+def _setup_logging(args: Namespace) -> None:
     log = logging.getLogger()
-    stream_h = logging.StreamHandler()
-    stream_fmter = logging.Formatter(
-        fmt="%(asctime)s.%(msecs)03d %(name)-15s %(levelname)-8s %(message)s",
-        style="%",
-        datefmt="%H:%M:%S",
-    )
-    stream_h.setFormatter(stream_fmter)
-    log.addHandler(stream_h)
-    # Matplotlib and PIL logs are very verbose, set them to warning
+    if args.logfile:
+        log_filename = args.logfile.resolve()
+        log_filename.parent.mkdir(exist_ok=True, parents=True)
+        # Rotate logfile after 50 MB
+        file_h = _RollingGzipFileHandler(log_filename, maxBytes=50_000_000)
+        file_fmter = logging.Formatter(
+            fmt="%(asctime)s.%(msecs)03d %(name)-15s %(levelname)- 8s %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            style="%",
+        )
+        file_h.setFormatter(file_fmter)
+        log.addHandler(file_h)
+    else:
+        stream_h = logging.StreamHandler()
+        stream_fmter = logging.Formatter(
+            fmt="%(asctime)s.%(msecs)03d %(name)-15s %(levelname)- 8s %(message)s",
+            datefmt="%H:%M:%S",
+            style="%",
+        )
+        stream_h.setFormatter(stream_fmter)
+        log.addHandler(stream_h)
+    # OPCUA, Matplotlib and PIL logs are very verbose, set them to warning
     log.getChild("opcua").setLevel(logging.WARNING)
     log.getChild("matplotlib").setLevel(logging.WARNING)
     log.getChild("PIL").setLevel(logging.WARNING)
+    if args.debug:
+        log.setLevel(logging.DEBUG)
 
 
 def _parse_args(args: list[str]) -> Namespace:
@@ -1035,12 +1109,23 @@ def _parse_args(args: list[str]) -> Namespace:
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument("--debug", action="store_true", help="Verbose (debug) logging")
     parser.add_argument(
+        "--logfile",
+        action="store",
+        help="Set logging output to file",
+        type=Path,
+    )
+    parser.add_argument(
         "--token", type=Path, default=Path("token.txt"), help="File containing model token"
     )
     parser.add_argument(
         "--allow-missing-hardware",
         action="store_true",
         help="Allow the script to continue without any hardware connected for local testing. (Uses testimage.jpg).",
+    )
+    parser.add_argument(
+        "--setup-mode",
+        action="store_true",
+        help="Enter special mode for testing hardware connections and camera setup. Implies --debug, --allow-missing-harware and --local-only",
     )
     parser.add_argument(
         "--dont-show-image",
@@ -1083,38 +1168,31 @@ def _parse_args(args: list[str]) -> Namespace:
         default=Path.cwd() / "results",
         help="Save directory",
     )
-    return parser.parse_args(args)
+    ret = parser.parse_args(args)
+    if ret.setup_mode:
+        ret.debug = True
+        ret.allow_missing_hardware = True
+        ret.local_only = True
+    return ret
 
 
-def main(args_: list[str]) -> None:  # noqa: C901, PLR0912, PLR0915
+def _create_configs_from(
+    args: Namespace,
+) -> tuple[OpcuaServerConfig, CameraParameters, WenglorConfig, EvalParameters]:
     log = logging.getLogger()
-    _setup_logging()
-    args = _parse_args(args_)
-    if args.debug:
-        log.setLevel(logging.DEBUG)
-
-    if not args.local_only:
-        if args.opcua_config:
-            with args.opcua_config.open("r", encoding="utf-8") as f:
-                config = json.load(f)
-                nodes = OpcuaNodes(**config.pop("nodes"))
-                opcua_server_config = OpcuaServerConfig(**config, nodes=nodes)
-        else:
-            # Use local server config if it is not provided
-            log.info("Using local OPCUA test server config")
-            opcua_server_config = OpcuaServerConfig(
-                url="opc.tcp://localhost:4840/freeopcua/server/",
-                namespace=2,
-                nodes=OpcuaNodes(capture_image_1=2, capture_image_2=3, results=4),
-            )
-        client: OpcuaClient | None = OpcuaClient(config=opcua_server_config)
-        # Connect early to fail early
-        if client is not None and not client.connect_to_server(
-            args.opcua_username, args.opcua_password
-        ):
-            return
+    if args.opcua_config:
+        with args.opcua_config.open("r", encoding="utf-8") as f:
+            config = json.load(f)
+            nodes = OpcuaNodes(**config.pop("nodes"))
+            opcua_server_config = OpcuaServerConfig(**config, nodes=nodes)
     else:
-        client = None
+        # Use local server config if it is not provided
+        log.info("Using local OPCUA test server config")
+        opcua_server_config = OpcuaServerConfig(
+            url="opc.tcp://localhost:4840/freeopcua/server/",
+            namespace=2,
+            nodes=OpcuaNodes(capture_image_1=2, capture_image_2=3, results=4),
+        )
     camera_parameters = CameraParameters(
         auto_exposure=True, exposure_time=1000, image_size=50, save_dir=args.save_dir
     )
@@ -1125,8 +1203,27 @@ def main(args_: list[str]) -> None:  # noqa: C901, PLR0912, PLR0915
     else:
         wenglor_config = WenglorConfig(save_dir=args.save_dir)
     eval_parameters = EvalParameters(probability_threshold=0.75)
+    return opcua_server_config, camera_parameters, wenglor_config, eval_parameters
 
+
+def main(args_: list[str]) -> None:  # noqa: C901, PLR0912
+    log = logging.getLogger()
+    args = _parse_args(args_)
+    _setup_logging(args)
+    opcua_server_config, camera_parameters, wenglor_config, eval_parameters = _create_configs_from(
+        args
+    )
+
+    client: OpcuaClient | None = None
     wenglor: Wenglor | None = None
+
+    if not args.local_only:
+        client = OpcuaClient(config=opcua_server_config)
+        # Connect early to fail early
+        if client is not None and not client.connect_to_server(
+            args.opcua_username, args.opcua_password
+        ):
+            return
     try:
         try:
             wenglor = Wenglor(config=wenglor_config)
