@@ -605,7 +605,10 @@ class Wenglor:
         self.harvester.update()
         self.log.debug("GigE devices: %s", self.harvester.device_info_list)
         self.ia = self.harvester.create()
-        self.ia.start()
+        self.ia.remove_device.node_map.AcquisitionMode = "SingleFrame"
+        self.ia.remove_device.node_map.TriggerSelector = "FrameStart"
+        self.ia.remove_device.node_map.TriggerMode = "On"
+        self.ia.remove_device.node_map.TriggerSource = "Software"
         self.point_cloud_data: Buffer | None = None
 
     def _start_server(self, timeout: float = 5.0) -> None:
@@ -645,6 +648,8 @@ class Wenglor:
         self.console("Acquiring point cloud...")
         self.log.info("Acquiring point cloud...")
         try:
+            self.ia.start()
+            self.ia.remove_device.node_map.TriggerSoftware.execute()
             if self.point_cloud_data is not None:
                 self.point_cloud_data.queue()
             self.point_cloud_data = self.ia.fetch(timeout=20)
