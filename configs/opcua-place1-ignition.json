@@ -1,0 +1,9 @@
+{
+    "url": "opc.tcp://10.54.128.106:62541/",
+    "namespace": 2,
+    "nodes": {
+        "capture_image_1": "[default]/KI/IMAGECAPTURED_1",
+        "capture_image_2": "[default]/KI/IMAGECAPTURED_2",
+        "results": "[default]/KI/Objekt"
+    }
+}
