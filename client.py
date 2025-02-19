@@ -605,10 +605,10 @@ class Wenglor:
         self.harvester.update()
         self.log.debug("GigE devices: %s", self.harvester.device_info_list)
         self.ia = self.harvester.create()
-        self.ia.remote_device.node_map.AcquisitionMode = "SingleFrame"
-        self.ia.remote_device.node_map.TriggerSelector = "FrameStart"
-        self.ia.remote_device.node_map.TriggerMode = "On"
-        self.ia.remote_device.node_map.TriggerSource = "Software"
+        self.ia.remote_device.node_map.AcquisitionMode.value = "SingleFrame"
+        self.ia.remote_device.node_map.TriggerSelector.value = "FrameStart"
+        self.ia.remote_device.node_map.TriggerMode.value = "On"
+        self.ia.remote_device.node_map.TriggerSource.value = "Software"
         self.point_cloud_data: Buffer | None = None
 
     def _start_server(self, timeout: float = 5.0) -> None:

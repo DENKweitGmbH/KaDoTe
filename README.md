@@ -125,7 +125,6 @@ Options are:
 
 * `Software_VisionApp_Demo_3D_2.0.0`
 * Start --> Doubleclick entry in device list
-* If trigger is set to `Software`, we currently cannot read data from out Python scripts. Trigger must be set to `Intern`.
 
 Data is read with `Harvesters` library: <https://github.com/genicam/harvesters>
 Needs a "producer file": [mvGenTLProducer.cti](/mvGenTLProducer.cti) (included in this repository)
