@@ -1210,7 +1210,7 @@ def _create_configs_from(
         auto_exposure=True, exposure_time=1000, image_size=50, save_dir=args.save_dir
     )
     if args.wenglor_config:
-        with args.opcua_config.open("r", encoding="utf-8") as f:
+        with args.wenglor_config.open("r", encoding="utf-8") as f:
             config = json.load(f)
             wenglor_config = WenglorConfig(save_dir=args.save_dir, **config)
     else:
