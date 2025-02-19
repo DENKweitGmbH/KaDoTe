@@ -23,7 +23,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import IntEnum
 from pathlib import Path
-from time import sleep
 from tkinter import ttk
 from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict, cast
 
@@ -818,7 +817,7 @@ class Libdenk:
             os.add_dll_directory(str(library_dir))
             self.libdll = ctypes.cdll.LoadLibrary("denk.dll")
         elif sys.platform == "linux":
-            # TODO: Might need to add library_dir to LD_LIBRARY_PATH env var?
+            # TODO: Might need to add library_dir to so path
             self.libdll = ctypes.cdll.LoadLibrary("libdenk.so")
 
         self.libdll.BuildInfo()
@@ -894,7 +893,7 @@ class Libdenk:
         image_file: str | Path,
         eval_parameters: EvalParameters,
     ) -> EvalResult:
-        import results_pb2  # type: ignore[import-not-found] # noqa: PLC0415
+        import results_pb2  # noqa: PLC0415
 
         log = logging.getLogger().getChild("libdenk")
         self.console("Evaluating image...")

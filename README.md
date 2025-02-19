@@ -14,6 +14,14 @@ git checkout main
 
 * Python 3.11
 * Python Packages see: [pyproject.toml](/pyproject.toml)
+* Extra libraries not included in this repo:
+  * DENKweit image analysis library:
+    * `denk.dll` (`libdenk.so` on Linux)
+    * `onnxruntime.dll`
+    * `results_pb2.py`
+    * A model file
+    * A token to load the model
+  * `ShapeDriverGigEInterface.exe` including its dependencies
 
 ### Install Python and dependencies
 

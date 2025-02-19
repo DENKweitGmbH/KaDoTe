@@ -27,3 +27,4 @@ token.txt
 results
 *.jpg
 ShapeDriveGigEInterface
+results_pb2.py
