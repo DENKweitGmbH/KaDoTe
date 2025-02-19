@@ -701,7 +701,7 @@ class Wenglor:
 
 
 class IdsCamera:
-    def __init__(self) -> None:
+    def __init__(self, *, exclusive_access: bool = True) -> None:
         """Initialize IDS camera."""
         self.console: Callable[[str], None] = lambda _s: None
         self.log = logging.getLogger().getChild("ids")
@@ -716,7 +716,12 @@ class IdsCamera:
             self.log.debug(device_descriptor.DisplayName())
 
         try:
-            self.device = device_descriptors[0].OpenDevice(ids_peak.DeviceAccessType_Exclusive)
+            access_type = (
+                ids_peak.DeviceAccessType_Exclusive
+                if exclusive_access
+                else ids_peak.DeviceAccessType_Control
+            )
+            self.device = device_descriptors[0].OpenDevice(access_type)
             self.log.info("Opened Device: %s", self.device.DisplayName())
             self.remote_device_nodemap = self.device.RemoteDevice().NodeMaps()[0]
             self.remote_device_nodemap.FindNode("TriggerSelector").SetCurrentEntry("ExposureStart")
@@ -1132,6 +1137,11 @@ def _parse_args(args: list[str]) -> Namespace:
         help="Do not popup the image after evaluation",
     )
     parser.add_argument(
+        "--camera-non-exclusive",
+        action="store_true",
+        help="Do not open camera with 'exclusive' access, use 'control' instead.",
+    )
+    parser.add_argument(
         "--wenglor-config",
         type=Path,
         help="Wenglor depth sensor config file",
@@ -1241,7 +1251,9 @@ def main(args_: list[str]) -> None:  # noqa: C901, PLR0912
                 return
 
         try:
-            camera: IdsCamera | MockCamera = IdsCamera()
+            camera: IdsCamera | MockCamera = IdsCamera(
+                exclusive_access=not args.camera_non_exclusive
+            )
         except (ids_peak.Exception, ids_ipl.Exception, IndexError):
             log.exception("Cannot connect IDS camera:")
             if args.allow_missing_hardware:
