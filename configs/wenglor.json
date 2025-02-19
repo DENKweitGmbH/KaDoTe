@@ -1,5 +1,5 @@
 {
     "server_ip": "192.168.100.2",
     "sensor_ip": "192.168.100.1",
-    "network_interface_index": 0
+    "network_interface_index": 1
 }
