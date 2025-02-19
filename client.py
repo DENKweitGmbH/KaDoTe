@@ -605,7 +605,6 @@ class Wenglor:
         self.harvester.update()
         self.log.debug("GigE devices: %s", self.harvester.device_info_list)
         self.ia = self.harvester.create()
-        self.log_node_maps()
         self.ia.start()
         self.point_cloud_data: Buffer | None = None
 
