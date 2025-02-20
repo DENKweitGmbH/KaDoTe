@@ -659,12 +659,15 @@ class Wenglor:
             return None
         self.console("Acquired point cloud.")
         self.log.info("Acquired point cloud.")
+        self.save_point_cloud()
         return self.point_cloud_data
 
     def save_point_cloud(self) -> None:
         """Save last point cloud to file."""
         if self.point_cloud_data is None:
             return
+        self.console("Saving point cloud.")
+        self.log.info("Saving point cloud.")
         pc_component = self.point_cloud_data.payload.components[1]
         mat_3d = pc_component.data.reshape(
             pc_component.height, pc_component.width, int(pc_component.num_components_per_pixel)
@@ -677,6 +680,8 @@ class Wenglor:
         self.config.save_dir.mkdir(parents=True, exist_ok=True)
         file_name = self.config.save_dir / ("pc_" + now.strftime("%Y-%m-%d_%H-%M-%S") + ".npy")
         np.save(file_name, pc_data)
+        self.console("Saved point cloud.")
+        self.log.info("Saved point cloud.")
 
     def close(self) -> None:
         if hasattr(self, "ia"):
