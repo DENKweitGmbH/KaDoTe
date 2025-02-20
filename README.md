@@ -1,5 +1,9 @@
 # Projekt KaDoTe
 
+## TODOs
+
+* Adapt result type to transmit multiple result objects via OPCUA array node instead of json array
+
 ## Python environment setup
 
 Cloning repository

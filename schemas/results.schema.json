@@ -3,55 +3,50 @@
     "$id": "https://denkweit.de/schemas/KaDoTe/results.schema.json",
     "title": "KaDoTe DENKweit Analysis Results",
     "description": "Schema for DENKweit image analysis results for the KaDoTe project",
-    "type": "array",
-    "items": {
-        "type": "array",
-        "items": {
-            "type": "object",
-            "properties": {
-                "x": {
-                    "type": "integer",
-                    "comment": "Position x coordinate"
-                },
-                "y": {
-                    "type": "integer",
-                    "comment": "Position y coordinate"
-                },
-                "z": {
-                    "type": "integer",
-                    "comment": "Position z coordinate"
-                },
-                "r": {
-                    "type": "integer",
-                    "comment": "Roll angle"
-                },
-                "p": {
-                    "type": "integer",
-                    "comment": "Pitch angle"
-                },
-                "yaw": {
-                    "type": "integer",
-                    "comment": "Yaw angle"
-                },
-                "t": {
-                    "type": "integer",
-                    "comment": "Object type. See client.ObjectType enum for possible values."
-                },
-                "pr": {
-                    "type": "integer",
-                    "comment": "Probability of analysis in percent"
-                }
-            },
-            "required": [
-                "x",
-                "y",
-                "z",
-                "r",
-                "p",
-                "yaw",
-                "t",
-                "pr"
-            ]
+    "$comment": "This schema represents one result object which is transmitted via the OPCUA server. Multiple such objects can be transmitted via a 'Array' OPUCA-Node.",
+    "type": "object",
+    "properties": {
+        "x": {
+            "type": "integer",
+            "comment": "Position x coordinate"
+        },
+        "y": {
+            "type": "integer",
+            "comment": "Position y coordinate"
+        },
+        "z": {
+            "type": "integer",
+            "comment": "Position z coordinate"
+        },
+        "r": {
+            "type": "integer",
+            "comment": "Roll angle"
+        },
+        "p": {
+            "type": "integer",
+            "comment": "Pitch angle"
+        },
+        "yaw": {
+            "type": "integer",
+            "comment": "Yaw angle"
+        },
+        "t": {
+            "type": "integer",
+            "comment": "Object type. See client.ObjectType enum for possible values."
+        },
+        "pr": {
+            "type": "integer",
+            "comment": "Probability of analysis in percent"
         }
-    }
+    },
+    "required": [
+        "x",
+        "y",
+        "z",
+        "r",
+        "p",
+        "yaw",
+        "t",
+        "pr"
+    ]
 }
