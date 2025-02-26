@@ -1110,7 +1110,7 @@ def _setup_logging(args: Namespace) -> None:
         stream_h.setFormatter(stream_fmter)
         log.addHandler(stream_h)
     # OPCUA, Matplotlib and PIL logs are very verbose, set them to warning
-    # log.getChild("opcua").setLevel(logging.WARNING)
+    log.getChild("opcua").setLevel(logging.WARNING)
     log.getChild("matplotlib").setLevel(logging.WARNING)
     log.getChild("PIL").setLevel(logging.WARNING)
     if args.debug:
