@@ -1244,7 +1244,8 @@ def main(args_: list[str]) -> None:  # noqa: C901, PLR0912
             return
     try:
         try:
-            wenglor = Wenglor(config=wenglor_config)
+            pass
+            # wenglor = Wenglor(config=wenglor_config)
         except ValueError:
             log.exception("Cannot connect Wenglor device:")
             if not args.allow_missing_hardware:
