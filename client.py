@@ -586,6 +586,7 @@ class WenglorConfig:
         if sys.platform != "win32"
         else next(Path.cwd().rglob("ShapeDriveGigEInterface.exe"), None)
     )
+    timeout: int = 45
 
 
 class Wenglor:
@@ -653,7 +654,7 @@ class Wenglor:
             self.ia.remote_device.node_map.TriggerSoftware.execute()
             if self.point_cloud_data is not None:
                 self.point_cloud_data.queue()
-            self.point_cloud_data = self.ia.fetch(timeout=200)
+            self.point_cloud_data = self.ia.fetch(timeout=self.config.timeout)
         except (TimeoutException, GenTL_GenericException):
             self.log.exception("Acquiring point cloud failed.")
             self.console("Acquiring point cloud failed.")
