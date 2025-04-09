@@ -1244,8 +1244,8 @@ def main(args_: list[str]) -> None:  # noqa: C901, PLR0912
             return
     try:
         try:
-            pass
-            # wenglor = Wenglor(config=wenglor_config)
+            # BUG: We need to make sure that the wenglor init does not connect to the ids camera if no wenglor sensor is found!
+            wenglor = Wenglor(config=wenglor_config)
         except ValueError:
             log.exception("Cannot connect Wenglor device:")
             if not args.allow_missing_hardware:
