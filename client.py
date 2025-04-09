@@ -578,7 +578,7 @@ class OpcuaClient:
 class WenglorConfig:
     save_dir: Path
     producer_file: Path = Path("mvGenTLProducer.cti")
-    server_ip: str = "192.168.100.2"
+    server_ip: str | None = "192.168.100.2"
     sensor_ip: str = "192.168.100.1"
     network_interface_index: int = 0
     server_software: Path | None = (
@@ -615,16 +615,17 @@ class Wenglor:
         """Tries to start GigE Vision server."""
         if not self.config.server_software:
             return
+        args = [
+            str(self.config.server_software),
+            "-i",
+            self.config.sensor_ip,
+            "-n",
+            str(self.config.network_interface_index),
+        ]
+        if self.config.server_ip:
+            args.extend(("-s", self.config.server_ip))
         self.server_process = subprocess.Popen(  # noqa: S603
-            [
-                str(self.config.server_software),
-                "-s",
-                self.config.server_ip,
-                "-i",
-                self.config.sensor_ip,
-                "-n",
-                str(self.config.network_interface_index),
-            ],
+            args,
             text=True,
             bufsize=1,  # line buffered
             stdout=subprocess.PIPE,
@@ -652,7 +653,7 @@ class Wenglor:
             self.ia.remote_device.node_map.TriggerSoftware.execute()
             if self.point_cloud_data is not None:
                 self.point_cloud_data.queue()
-            self.point_cloud_data = self.ia.fetch(timeout=20)
+            self.point_cloud_data = self.ia.fetch(timeout=200)
         except (TimeoutException, GenTL_GenericException):
             self.log.exception("Acquiring point cloud failed.")
             self.console("Acquiring point cloud failed.")
