@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import contextlib
-import ctypes
 import datetime as dt
 import gzip
 import json
@@ -12,19 +11,16 @@ import logging
 import logging.handlers
 import os
 import shutil
-import struct
 import subprocess  # noqa: S404
 import sys
-import time
 import tkinter as tk
 import warnings
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from dataclasses import dataclass
 from datetime import datetime
-from enum import IntEnum
 from pathlib import Path
 from tkinter import ttk
-from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import ids_peak_ipl.ids_peak_ipl as ids_ipl
 import numpy as np
@@ -47,6 +43,10 @@ from PIL import Image
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+import eval_types
+
+from evaluate import Libdenk
 
 # ruff: noqa: T201, D101, D102, D103, D107, DOC201
 
@@ -78,34 +78,6 @@ class CameraParameters(TypedDict, total=True):
     save_dir: Path
 
 
-class EvalParameters(TypedDict, total=True):
-    probability_threshold: float
-
-
-EvalResult: TypeAlias = tuple[bytes, int, int, int]
-
-
-class ObjectType(IntEnum):
-    """Classification object type."""
-
-    Unknown = -1
-
-
-class AnalysisResult(TypedDict, total=True):
-    """Python representation of results json object.
-
-    See `schemas/result.schema.json.
-    """
-
-    x: int
-    y: int
-    z: int
-    r: int
-    p: int
-    yaw: int
-    t: ObjectType
-    pr: int
-
 
 class Gui:
     def __init__(  # noqa: PLR0915
@@ -113,8 +85,8 @@ class Gui:
         capture_image: Callable[[CameraParameters], Path],
         camera_parameters: CameraParameters,
         acquire_point_cloud: Callable[[], Buffer | None] | None,
-        evaluate_image: Callable[[Path, EvalParameters], EvalResult],
-        eval_parameters: EvalParameters,
+        evaluate_image_3d: Callable[[Path, eval_types.EvalParameters, np.ndarray, float], eval_types.EvalResult3D],
+        eval_parameters: eval_types.EvalParameters,
     ) -> None:
         """Initialize GUI."""
         self.capture_image = capture_image
@@ -124,7 +96,7 @@ class Gui:
 
         self.acquire_point_cloud = acquire_point_cloud if acquire_point_cloud else lambda: None
 
-        self.evaluate_image = evaluate_image
+        self.evaluate_image_3d = evaluate_image_3d
         self.eval_parameters = eval_parameters
         self.point_cloud_data: Buffer | None = None
         # Build Gui
@@ -819,193 +791,16 @@ class MockCamera:
         return self.last_image_file
 
 
-class Libdenk:
-    def __init__(
-        self, token: str, library_dir: Path | None = None, model_dir: Path = Path("models")
-    ) -> None:
-        self.console: Callable[[str], None] = lambda _s: None
-        if library_dir is None:
-            library_dir = Path.cwd()
-        # Initialize networks
-        # Load the DLL
-        if sys.platform == "win32":
-            # Add the current working directory to the DLL search path
-            os.add_dll_directory(str(library_dir))
-            self.libdll = ctypes.cdll.LoadLibrary("denk.dll")
-        elif sys.platform == "linux":
-            # TODO: Might need to add library_dir to so path
-            self.libdll = ctypes.cdll.LoadLibrary("libdenk.so")
-
-        self.libdll.BuildInfo()
-        retval = self.libdll.TokenLogin(token.encode("utf-8"), b"\x00")
-        self.print_formatted_return("TokenLogin", retval)
-        # Allocate a buffer for the model information
-        modelinfo = b"\x00" * 10000
-        modelinfo_size = ctypes.c_int(len(modelinfo))
-        modelinfo_size_pnt = ctypes.pointer(modelinfo_size)
-        # Read all model files in the model_dir directory, write the model info into "buffer" (will be ignored in this example), select the CPU (-1) as the evaluation device
-        retval = self.libdll.ReadAllModels(
-            str(model_dir).encode("utf-8"), modelinfo, modelinfo_size_pnt, -1
-        )
-        self.print_formatted_return("ReadAllModels", retval)
-
-        # Get the default JSON
-        buffer1_size = ctypes.c_int(1000000)
-        buffer1 = b"\x00" * buffer1_size.value
-        retval = self.libdll.GetDefaultJson(buffer1, ctypes.byref(buffer1_size))
-        self.print_formatted_return("GetDefaultJson", retval)
-
-        default_json = json.loads(buffer1[: buffer1_size.value].decode("utf-8"))
-
-        with Path("networkconfig_default.json").open("w", encoding="utf-8") as file:
-            json.dump(default_json, file, indent=2)
-
-        # Add entries for the loaded networks
-        buffer2_size = ctypes.c_int(1000000)
-        buffer2 = b"\x00" * buffer2_size.value
-        retval = self.libdll.CreateJsonEntries(
-            buffer1, buffer1_size.value, buffer2, ctypes.byref(buffer2_size)
-        )
-        self.print_formatted_return("CreateJsonEntries", retval)
-
-        default_json_with_models = json.loads(buffer2[: buffer2_size.value].decode("utf-8"))
-
-        with Path("networkconfig_default_with_models.json").open("w", encoding="utf-8") as file:
-            json.dump(default_json_with_models, file, indent=2)
-
-    @staticmethod
-    def print_formatted_return(
-        function_name: str, retval: int, t: float | None = None, *, raise_on_error: bool = True
-    ) -> bool:
-        """Prints the returned integer value as hexadecimal.
-
-        Returns:
-            Whether the status is okay.
-
-        Raises:
-            RuntimeError: If libdenk status is not ok and raise_on_error is True.
-        """
-        log = logging.getLogger().getChild("libdenk")
-        code = struct.pack(">i", retval).hex().upper()
-        if t is None:
-            log.info("%s returned: %s", function_name, code)
-        else:
-            log.info("%s returned: %s ({%s} s)", function_name, code, t)
-        ok = code == "DE000000"
-        if raise_on_error and not ok:
-            msg = f"Libdenk function {function_name} returned code {code}!"
-            raise RuntimeError(msg)
-        return ok
-
-    @staticmethod
-    def c_str_to_p_str(c_str: bytes) -> str:
-        pos = c_str.find(b"\x00")
-        if pos == -1:
-            return c_str.decode("utf-8")
-        return c_str[:pos].decode("utf-8")
-
-    def evaluate_image(  # noqa: PLR0914
-        self,
-        image_file: str | Path,
-        eval_parameters: EvalParameters,
-    ) -> EvalResult:
-        import results_pb2  # noqa: PLC0415
-
-        log = logging.getLogger().getChild("libdenk")
-        self.console("Evaluating image...")
-        log.info("Evaluating image...")
-        probability_threshold = eval_parameters["probability_threshold"]
-        # Open the image file in the "read bytes" mode and read the data
-        img_data = Path(image_file).read_bytes()
-
-        # Allocate the variable and the pointer for the index
-        index = ctypes.c_int(0)
-        index_pnt = ctypes.pointer(index)
-
-        # Load the image data
-        retval = self.libdll.LoadImageData(index_pnt, img_data, len(img_data))
-        self.print_formatted_return("LoadImageData", retval)
-
-        # Evaluate the image
-        t1 = time.time()
-        retval = self.libdll.EvaluateImage(index)
-        t2 = time.time()
-        self.print_formatted_return("EvaluateImage", retval, t2 - t1)
-
-        # Allocate a buffer for the results of the evaluation
-        results = b"\x00" * 100000
-        results_size = ctypes.c_int(len(results))
-        results_size_pnt = ctypes.pointer(results_size)
-
-        # Get the results of the evaluation
-        retval = self.libdll.ProcessFeatures(index)
-        retval = self.libdll.GetResults(index, results, results_size_pnt)
-        self.print_formatted_return("GetResults", retval)
-
-        # Parse the results
-        results_proto = results_pb2.Results()
-        results_proto.ParseFromString(results[: results_size.value])
-
-        # Print some results
-        for otpt in results_proto.output:
-            for ftr in otpt.feature:
-                if ftr.probability > probability_threshold:
-                    log.debug(
-                        f"Found {ftr.label} at\tx = {ftr.rect_x}\tand y = {ftr.rect_y}\twith probabilty p = {ftr.probability}"  # noqa: G004
-                    )
-                    self.console(
-                        f"Found {ftr.label} at\tx = {ftr.rect_x}\tand y = {ftr.rect_y}\twith probabilty p = {ftr.probability}"
-                    )
-        # Classification results
-        for otpt in results_proto.output:
-            if otpt.classifier > 0:
-                print(f"Class {otpt.model_label}:\t{round(100 * otpt.classifier, 2)} %")
-
-        # To allocate the correct buffer size, the image dimensions will be taken from the original image
-        w = ctypes.c_int(0)
-        h = ctypes.c_int(0)
-        c = ctypes.c_int(0)
-        w_pnt = ctypes.pointer(w)
-        h_pnt = ctypes.pointer(h)
-        c_pnt = ctypes.pointer(c)
-        retval = self.libdll.GetOriginalImageDimensions(index, w_pnt, h_pnt, c_pnt)
-        self.print_formatted_return("GetOriginalImageDimensions", retval)
-        c.value = 3
-        image_buffer_size = w.value * h.value * c.value
-        # Allocate a buffer for the resulting image data
-        image = b"\x00" * image_buffer_size
-        image_size = ctypes.c_int(image_buffer_size)
-        image_size_pnt = ctypes.pointer(image_size)
-
-        # Get the image with drawn in boxes and segmentations
-        overlap_threshold = 1.0
-        alpha_boxes = 0.5
-        alpha_segmentations = 0.5
-
-        retval = self.libdll.DrawBoxes(
-            index,
-            ctypes.c_double(overlap_threshold),
-            ctypes.c_double(alpha_boxes),
-            ctypes.c_double(alpha_segmentations),
-            image,
-            image_size_pnt,
-        )
-        self.print_formatted_return("DrawBoxes", retval)
-        self.console("Evaluating image done.")
-        log.info("Evaluating image done.")
-        return image, w.value, h.value, c.value
-
-
 class MockEvaluation:
     def __init__(self) -> None:
         self.console: Callable[[str], None] = lambda _s: None
 
-    def evaluate_image(
+    def evaluate_image_3d(
         self,
         image_file: str | Path,
-        _eval_parameters: EvalParameters,
-    ) -> EvalResult:
-        log = logging.getLogger().getChild("lidenk.mock")
+        _eval_parameters: eval_types.EvalParameters,
+    ) -> eval_types.EvalResult3D:
+        log = logging.getLogger().getChild("libdenk.mock")
         self.console("Evaluating image...")
         # Do nothing, return as-is
         with Image.open(image_file) as img:
@@ -1049,11 +844,11 @@ def check_acquire_and_evaluate(
             log.warning("Cannot evaluate, camera image is missing!")
         else:
             # TODO: Do something with the point cloud?
-            image, w, h, c = libdenk.evaluate_image(camera.last_image_file, gui.eval_parameters)
+            image, w, h, c = libdenk.evaluate_image_3d(camera.last_image_file, gui.eval_parameters)
             gui.save_and_display_image(image, w, h, c, camera.last_image_file)
             # TODO: Create actual results here
             client.results = json.dumps(
-                [AnalysisResult(x=0, y=0, z=0, r=0, p=0, yaw=0, t=ObjectType.Unknown, pr=100)],
+                [eval_types.AnalysisResult(x=0, y=0, z=0, r=0, p=0, yaw=0, t=eval_types.ObjectType.Unknown, pr=100)],
                 separators=(",", ":"),
             )
         # Reset flag to signal completion
@@ -1198,7 +993,7 @@ def _parse_args(args: list[str]) -> Namespace:
 
 def _create_configs_from(
     args: Namespace,
-) -> tuple[OpcuaServerConfig, CameraParameters, WenglorConfig, EvalParameters]:
+) -> tuple[OpcuaServerConfig, CameraParameters, WenglorConfig, eval_types.EvalParameters]:
     log = logging.getLogger()
     if args.opcua_config:
         with args.opcua_config.open("r", encoding="utf-8") as f:
@@ -1222,7 +1017,7 @@ def _create_configs_from(
             wenglor_config = WenglorConfig(save_dir=args.save_dir, **config)
     else:
         wenglor_config = WenglorConfig(save_dir=args.save_dir)
-    eval_parameters = EvalParameters(probability_threshold=0.75)
+    eval_parameters = eval_types.EvalParameters(probability_threshold=0.75)
     return opcua_server_config, camera_parameters, wenglor_config, eval_parameters
 
 

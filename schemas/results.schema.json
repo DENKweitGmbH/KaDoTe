@@ -1,52 +1,43 @@
 {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://denkweit.de/schemas/KaDoTe/results.schema.json",
-    "title": "KaDoTe DENKweit Analysis Results",
-    "description": "Schema for DENKweit image analysis results for the KaDoTe project",
-    "$comment": "This schema represents one result object which is transmitted via the OPCUA server. Multiple such objects can be transmitted via a 'Array' OPUCA-Node.",
-    "type": "object",
-    "properties": {
-        "x": {
-            "type": "integer",
-            "comment": "Position x coordinate"
-        },
-        "y": {
-            "type": "integer",
-            "comment": "Position y coordinate"
-        },
-        "z": {
-            "type": "integer",
-            "comment": "Position z coordinate"
-        },
-        "r": {
-            "type": "integer",
-            "comment": "Roll angle"
-        },
-        "p": {
-            "type": "integer",
-            "comment": "Pitch angle"
-        },
-        "yaw": {
-            "type": "integer",
-            "comment": "Yaw angle"
-        },
-        "t": {
-            "type": "integer",
-            "comment": "Object type. See client.ObjectType enum for possible values."
-        },
-        "pr": {
-            "type": "integer",
-            "comment": "Probability of analysis in percent"
-        }
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://denkweit.de/schemas/KaDoTe/results.schema.json",
+  "title": "KaDoTe DENKweit Analysis Results",
+  "description": "Schema for DENKweit image analysis results for the KaDoTe project",
+  "$comment": "This schema represents one result object which is transmitted via the OPCUA server. Multiple such objects can be transmitted via a 'Array' OPUCA-Node.",
+  "type": "object",
+  "properties": {
+    "x": {
+      "type": "float",
+      "comment": "Position x coordinate"
     },
-    "required": [
-        "x",
-        "y",
-        "z",
-        "r",
-        "p",
-        "yaw",
-        "t",
-        "pr"
-    ]
+    "y": {
+      "type": "float",
+      "comment": "Position y coordinate"
+    },
+    "z": {
+      "type": "float",
+      "comment": "Position z coordinate"
+    },
+    "r": {
+      "type": "float",
+      "comment": "Roll angle"
+    },
+    "p": {
+      "type": "float",
+      "comment": "Pitch angle"
+    },
+    "yaw": {
+      "type": "float",
+      "comment": "Yaw angle"
+    },
+    "t": {
+      "type": "float",
+      "comment": "Object type. See client.ObjectType enum for possible values."
+    },
+    "c": {
+      "type": "float",
+      "comment": "Confidence of analysis in percent"
+    }
+  },
+  "required": ["x", "y", "z", "r", "p", "yaw", "t", "c"]
 }
