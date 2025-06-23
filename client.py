@@ -383,17 +383,17 @@ class Gui:
         self.display_image(img)
 
     def show_last_height_map(self) -> None:
-        data_3d = self.get_last_point_cloud()
-        if data_3d is None:
+        array = self.get_last_point_cloud()
+        if array is None:
             self.update_wenglor_textbox("Missing data")
             return
-        array = data_3d[:, :, 2]
+        array = array[:, 2]
 
         vmin = np.min(array)
         vmax = np.max(array)
 
         # Plot the array
-        plt.imshow(array, vmin=vmin, vmax=vmax)
+        plt.imshow(array, vmin=float(vmin), vmax=float(vmax))
         plt.colorbar()  # Optionally add a colorbar
         plt.title("Height Map")
         plt.show(block=False)
@@ -425,22 +425,22 @@ class Gui:
             return self.point_cloud_data.payload.components[1].data
 
         pointcloud_height_component = self.point_cloud_data.payload.components[1]
-        return pointcloud_height_component.data.reshape(  # type: ignore[no-any-return]
+        data_3d = pointcloud_height_component.data.reshape(  # type: ignore[no-any-return]
             pointcloud_height_component.height,
             pointcloud_height_component.width,
             int(pointcloud_height_component.num_components_per_pixel),
         )
-
-    def show_last_point_cloud(self) -> None:
-        data_3d = self.get_last_point_cloud()
-        if data_3d is None:
-            self.update_wenglor_textbox("Missing data")
-            return
         x = data_3d[:, :, 0].flatten()
         y = data_3d[:, :, 1].flatten()
         z = data_3d[:, :, 2].flatten()
 
-        pointcloud_plot_data = np.vstack((x, y, z)).T
+        return np.vstack((x, y, z)).T
+
+    def show_last_point_cloud(self) -> None:
+        pointcloud_plot_data = self.get_last_point_cloud()
+        if pointcloud_plot_data is None:
+            self.update_wenglor_textbox("Missing data")
+            return
         z_min = 0.0  # Minimum Z value
         z_max = 500.0  # Maximum Z value
         mask = (pointcloud_plot_data[:, 2] >= z_min) & (pointcloud_plot_data[:, 2] <= z_max)
@@ -812,9 +812,9 @@ class MockWenglor:
         self.console("Acquiring dummy point cloud...")
         self.log.info("Acquiring dummy point cloud...")
         data = np.load(self.pc_file)
-        x = data[0]
-        y = data[1]
-        z = data[2]
+        x = data[:, 0]
+        y = data[:, 1]
+        z = data[:, 2]
         # TODO: This is producing the wrong shape!
         mat_3d = np.zeros((x.shape[0], 1, 3))
         mat_3d[:, 0, 0] = x
