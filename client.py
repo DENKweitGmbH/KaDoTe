@@ -527,11 +527,11 @@ class OpcuaClient:
         return cast("str", self._results_node.get_value())
 
     @results.setter
-    def results(self, value: str) -> None:
-        if self.client is None:
+    def results(self, value: list[str]) -> None:
+        if self.client is None or not value:
             return
         self._results_node.set_value(
-            opcua.ua.DataValue(opcua.ua.Variant(value, opcua.ua.VariantType.String))
+            opcua.ua.DataValue(opcua.ua.Variant(value[0], opcua.ua.VariantType.String))
         )
 
     def close(self) -> None:
@@ -888,10 +888,7 @@ def check_acquire_and_evaluate(
                 camera.last_image_file, gui.eval_parameters, pc
             )
             gui.save_and_display_image(image, camera.last_image_file)
-            client.results = json.dumps(
-                found_objects,
-                separators=(",", ":"),
-            )
+            client.results = [json.dumps(obj, separators=(",", ":")) for obj in found_objects]
         # Reset flag to signal completion
         client.capture_image_2 = False
 
