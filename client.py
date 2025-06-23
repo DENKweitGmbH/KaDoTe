@@ -812,16 +812,8 @@ class MockWenglor:
         self.console("Acquiring dummy point cloud...")
         self.log.info("Acquiring dummy point cloud...")
         data = np.load(self.pc_file)
-        x = data[:, 0]
-        y = data[:, 1]
-        z = data[:, 2]
-        # TODO: This is producing the wrong shape!
-        mat_3d = np.zeros((x.shape[0], 1, 3))
-        mat_3d[:, 0, 0] = x
-        mat_3d[:, 0, 1] = y
-        mat_3d[:, 0, 2] = z
         return MockWenglor._MockBuffer(
-            MockWenglor._MockPayload((None, MockWenglor._MockData(mat_3d)))
+            MockWenglor._MockPayload((None, MockWenglor._MockData(data)))
         )
 
     @classmethod
@@ -898,6 +890,7 @@ def check_acquire_and_evaluate(
             image, found_objects = libdenk.evaluate_image_3d(
                 camera.last_image_file, gui.eval_parameters, pc
             )
+            log.info("Found objects: %s", found_objects)
             gui.save_and_display_image(image, camera.last_image_file)
             client.results = [json.dumps(obj, separators=(",", ":")) for obj in found_objects]  # type: ignore[assignment]
         # Reset flag to signal completion
