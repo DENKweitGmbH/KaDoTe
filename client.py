@@ -1104,6 +1104,16 @@ def main(args_: list[str]) -> None:  # noqa: C901, PLR0912, PLR0915
             return
     try:
         try:
+            # BUG: We need to make sure that the wenglor init does not connect to the ids camera if no wenglor sensor is found!
+            wenglor: Wenglor | MockWenglor = Wenglor(config=wenglor_config)
+        except ValueError:
+            log.exception("Cannot connect Wenglor device:")
+            if args.allow_missing_hardware:
+                wenglor = MockWenglor()
+            else:
+                return
+
+        try:
             libdenk: Libdenk | MockEvaluation = Libdenk(
                 camera_calibration_data_path=args.camera_calibration,
                 camera_position_data_path=args.camera_position,
@@ -1126,16 +1136,6 @@ def main(args_: list[str]) -> None:  # noqa: C901, PLR0912, PLR0915
                 camera = MockCamera()
             else:
                 return
-        try:
-            # BUG: We need to make sure that the wenglor init does not connect to the ids camera if no wenglor sensor is found!
-            wenglor: Wenglor | MockWenglor = Wenglor(config=wenglor_config)
-        except ValueError:
-            log.exception("Cannot connect Wenglor device:")
-            if args.allow_missing_hardware:
-                wenglor = MockWenglor()
-            else:
-                return
-
         gui = Gui(
             camera.capture_image,
             camera_parameters,
