@@ -11,10 +11,12 @@
     "displayNetworkNames": false,
     "divide_images_horizontal": 1,
     "divide_images_vertical": 1,
+    "drawOrientedBoundingBoxes": true,
     "edge_h": 0,
     "edge_h_b": 0,
     "edge_w": 0,
     "edge_w_r": 0,
+    "evaluationSizes": {},
     "forceDivisor": false,
     "forceEvalSizeChannels": -1,
     "forceEvalSizeHeight": -1,
@@ -25,17 +27,23 @@
     "imageHeight_mm": 100,
     "imageWidth_mm": 100,
     "keepInputAspectRatio": false,
-    "keepInputAspectRatioPadding": 0,
     "maximumDefects": 1000,
+    "modelInfo": {},
     "module_cells_h": 1,
     "module_cells_w": 1,
+    "movingWindow": {},
     "network_selection": {
       "DEFAULT": {
-        "5b52a799-9901-45eb-a6b8-f3880894ce2d": true
+        "5b52a799-9901-45eb-a6b8-f3880894ce2d": true,
+        "e2555529-5dec-4209-893b-18eb72c69a03": true
       }
     },
+    "ocrMaximumTextFeatures": 32,
+    "ocrModelUid": "",
+    "ocrTextFeatureUids": [],
     "overlapThreshold": 100,
     "preEvaluationCanny": [],
+    "preSelectionOverlapThreshold": 70,
     "selectiveSegmentationMap": true,
     "showSegmentations": true,
     "simplifiedEvaluation": false,
@@ -49,6 +57,13 @@
       ],
       "name": "Label_Tools",
       "path": "models/Label_Tools.denk"
+    },
+    "e2555529-5dec-4209-893b-18eb72c69a03": {
+      "feature_uids": [
+        "b398d11e-8bed-4602-98ef-bc9883ebcb9a"
+      ],
+      "name": "Segmentation_Grid-Dummy_2",
+      "path": "models/Segmentation_Grid-Dummy_2.denk"
     }
   },
   "objectDetectionNetwork": {
@@ -131,13 +146,6 @@
         "unit": ""
       },
       {
-        "attName": "ImageClassifier",
-        "attName_CH": "\u56fe\u50cf\u5206\u7c7b",
-        "default": 0,
-        "type": "int",
-        "unit": ""
-      },
-      {
         "attName": "deepGrayLevel",
         "attName_CH": "deepGrayLevel",
         "default": 0,
@@ -153,6 +161,18 @@
       }
     ],
     "defectTypes": [
+      {
+        "groups": {},
+        "name": "Triangle",
+        "settings": {
+          "disabled_thresholds": [],
+          "parameters": {
+            "factor": 1
+          }
+        },
+        "short": "TRIANGLE",
+        "uid": "b398d11e-8bed-4602-98ef-bc9883ebcb9a"
+      },
       {
         "groups": {},
         "name": "Label_Tools",

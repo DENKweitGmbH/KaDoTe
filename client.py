@@ -272,11 +272,10 @@ class Gui:
 
     def eval_and_display(self) -> None:
         """Evaluate image and display result."""
-        if self.last_image_file is None or self.point_cloud_data is None:
+        if self.last_image_file is None or (pc := self.get_last_point_cloud()) is None:
             return
-        res_img, _objs = self.evaluate_image_3d(
-            self.last_image_file, self.eval_parameters, self.point_cloud_data
-        )
+
+        res_img, _objs = self.evaluate_image_3d(self.last_image_file, self.eval_parameters, pc)
         self.save_and_display_image(res_img, self.last_image_file)
 
     def update_camera_textbox(self, new_info: str) -> None:
@@ -374,16 +373,11 @@ class Gui:
         self.display_image(img)
 
     def show_last_height_map(self) -> None:
-        if self.point_cloud_data is None:
+        data_3d = self.get_last_point_cloud()
+        if data_3d is None:
             self.update_wenglor_textbox("Missing data")
             return
-        image_component = self.point_cloud_data.payload.components[1]
-        _3d = image_component.data.reshape(
-            image_component.height,
-            image_component.width,
-            int(image_component.num_components_per_pixel),
-        )
-        array = _3d[:, :, 2]
+        array = data_3d[:, :, 2]
 
         vmin = np.min(array)
         vmax = np.max(array)
@@ -413,20 +407,28 @@ class Gui:
         plt.title("Intensity map")
         plt.show(block=False)
 
-    def show_last_point_cloud(self) -> None:
+    def get_last_point_cloud(self) -> npt.NDArray[np.float64] | None:
+        """Returns latest point cloud data."""
         if self.point_cloud_data is None:
-            self.update_wenglor_textbox("Missing data")
-            return
+            return None
+        if isinstance(self.point_cloud_data, MockWenglor._MockBuffer):
+            return self.point_cloud_data.payload.components[1].data
+
         pointcloud_height_component = self.point_cloud_data.payload.components[1]
-        _3d = pointcloud_height_component.data.reshape(
+        return pointcloud_height_component.data.reshape(  # type: ignore[no-any-return]
             pointcloud_height_component.height,
             pointcloud_height_component.width,
             int(pointcloud_height_component.num_components_per_pixel),
         )
 
-        x = _3d[:, :, 0].flatten()
-        y = _3d[:, :, 1].flatten()
-        z = _3d[:, :, 2].flatten()
+    def show_last_point_cloud(self) -> None:
+        data_3d = self.get_last_point_cloud()
+        if data_3d is None:
+            self.update_wenglor_textbox("Missing data")
+            return
+        x = data_3d[:, :, 0].flatten()
+        y = data_3d[:, :, 1].flatten()
+        z = data_3d[:, :, 2].flatten()
 
         pointcloud_plot_data = np.vstack((x, y, z)).T
         z_min = 0.0  # Minimum Z value
@@ -777,6 +779,45 @@ class IdsCamera:
         return file_name
 
 
+class MockWenglor:
+    @dataclass
+    class _MockData:
+        data: npt.NDArray[np.float64]
+
+    @dataclass
+    class _MockPayload:
+        components: tuple[None, MockWenglor._MockData]
+
+    @dataclass
+    class _MockBuffer:
+        payload: MockWenglor._MockPayload
+
+    def __init__(self) -> None:
+        self.console: Callable[[str], None] = lambda _s: None
+        self.log = logging.getLogger().getChild("wenglor.mock")
+        self.pc_file: Path = Path("40cm.npy")
+
+    def acquire_point_cloud(self) -> Buffer | None:
+        self.console("Acquiring dummy point cloud...")
+        self.log.info("Acquiring dummy point cloud...")
+        data = np.load(self.pc_file)
+        x = data[0]
+        y = data[1]
+        z = data[2]
+        # TODO: This is producing the wrong shape!
+        mat_3d = np.zeros((x.shape[0], 1, 3))
+        mat_3d[:, 0, 0] = x
+        mat_3d[:, 0, 1] = y
+        mat_3d[:, 0, 2] = z
+        return MockWenglor._MockBuffer(
+            MockWenglor._MockPayload((None, MockWenglor._MockData(mat_3d)))
+        )
+
+    @classmethod
+    def close(cls) -> None:
+        return
+
+
 class MockCamera:
     def __init__(self) -> None:
         self.console: Callable[[str], None] = lambda _s: None
@@ -813,7 +854,7 @@ def check_acquire_and_evaluate(
     client: OpcuaClient,
     libdenk: Libdenk | MockEvaluation,
     camera: IdsCamera | MockCamera,
-    wenglor: Wenglor | None,
+    wenglor: Wenglor | MockWenglor,
 ) -> None:
     """Poll the OPCUA server and do new analysis if requested."""
     log = logging.getLogger().getChild("opcua_client")
@@ -840,11 +881,11 @@ def check_acquire_and_evaluate(
         # Evaluate the images if we executed the last stage
         if camera.last_image_file is None:
             log.warning("Cannot evaluate, camera image is missing!")
-        elif gui.point_cloud_data is None:
+        elif (pc := gui.get_last_point_cloud()) is None:
             log.warning("Cannot evaluate, point cloud is missing!")
         else:
             image, found_objects = libdenk.evaluate_image_3d(
-                camera.last_image_file, gui.eval_parameters, gui.point_cloud_data
+                camera.last_image_file, gui.eval_parameters, pc
             )
             gui.save_and_display_image(image, camera.last_image_file)
             client.results = json.dumps(
@@ -957,13 +998,13 @@ def _parse_args(args: list[str]) -> Namespace:
     analysis_group.add_argument(
         "--camera-calibration",
         type=Path,
-        default=Path(__file__).absolute() / "configs" / "camera_calibration.json",
+        default=Path(__file__).parent.absolute() / "configs" / "camera_calibration.json",
         help="Camera calibration data file.",
     )
     analysis_group.add_argument(
         "--camera-position",
         type=Path,
-        default=Path(__file__).absolute() / "configs" / "camera_position.json",
+        default=Path(__file__).parent.absolute() / "configs" / "camera_position.json",
         help="Camera position data file.",
     )
 
@@ -1045,7 +1086,6 @@ def main(args_: list[str]) -> None:  # noqa: C901, PLR0912
     )
 
     client: OpcuaClient | None = None
-    wenglor: Wenglor | None = None
 
     if not args.local_only:
         client = OpcuaClient(config=opcua_server_config)
@@ -1057,10 +1097,12 @@ def main(args_: list[str]) -> None:  # noqa: C901, PLR0912
     try:
         try:
             # BUG: We need to make sure that the wenglor init does not connect to the ids camera if no wenglor sensor is found!
-            wenglor = Wenglor(config=wenglor_config)
+            wenglor: Wenglor | MockWenglor = Wenglor(config=wenglor_config)
         except ValueError:
             log.exception("Cannot connect Wenglor device:")
-            if not args.allow_missing_hardware:
+            if args.allow_missing_hardware:
+                wenglor = MockWenglor()
+            else:
                 return
 
         try:

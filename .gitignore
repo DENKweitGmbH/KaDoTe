@@ -17,6 +17,7 @@ Software_VisionApp*
 .vscode/*
 *.zip
 *.so
+*.so*
 *.dll
 *.cache
 .venv
@@ -27,6 +28,7 @@ token.txt
 results
 *.jpg
 ShapeDriveGigEInterface
+*.npy
 
 results_pb2.py
 results_pb2.pyi

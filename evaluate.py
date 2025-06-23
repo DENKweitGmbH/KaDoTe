@@ -179,7 +179,7 @@ class Libdenk:
             os.environ["LD_LIBRARY_PATH"] = str(
                 library_dir
             )  # TODO: Test if loading libdenk.so works
-            self.libdll = ctypes.cdll.LoadLibrary("libdenk.so")
+            self.libdll = ctypes.cdll.LoadLibrary(str(library_dir / "libdenk.so"))
 
         self.mapper = PointCloudMapper(camera_calibration_data_path, camera_position_data_path)
 
