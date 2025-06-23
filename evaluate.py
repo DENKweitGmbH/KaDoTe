@@ -369,14 +369,14 @@ class Libdenk:
                 continue
 
             analysis_results.append({
-                "x": float(point_in_space[0]),
-                "y": float(point_in_space[1]),
-                "z": float(point_in_space[2]),
+                "x": round(float(point_in_space[0]), 2),
+                "y": round(float(point_in_space[1]), 2),
+                "z": round(float(point_in_space[2]), 2),
                 "p": 0.0,
                 "r": 0.0,
                 "yaw": 0.0,
                 "t": obj["type"].value,
-                "c": 100.0 * obj["confidence"],
+                "c": round(100.0 * obj["confidence"], 1),
             })
 
         return img_array, analysis_results
