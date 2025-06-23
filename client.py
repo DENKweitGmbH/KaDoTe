@@ -889,7 +889,7 @@ def check_acquire_and_evaluate(
                 camera.last_image_file, gui.eval_parameters, pc
             )
             gui.save_and_display_image(image, camera.last_image_file)
-            client.results = [json.dumps(obj, separators=(",", ":")) for obj in found_objects]
+            client.results = [json.dumps(obj, separators=(",", ":")) for obj in found_objects]  # type: ignore[assignment]
         # Reset flag to signal completion
         client.capture_image_2 = False
 
@@ -1075,7 +1075,7 @@ def _create_configs_from(
     return opcua_server_config, camera_parameters, wenglor_config, eval_parameters
 
 
-def main(args_: list[str]) -> None:  # noqa: C901, PLR0912
+def main(args_: list[str]) -> None:  # noqa: C901, PLR0912, PLR0915
     log = logging.getLogger()
     args = _parse_args(args_)
     _setup_logging(args)
