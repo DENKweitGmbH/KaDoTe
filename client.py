@@ -540,6 +540,8 @@ class OpcuaClient:
     def results(self, value: list[str]) -> None:
         if self.client is None:
             return
+        if not value:
+            value = [""]
         self.log.debug("Sending results to server: %s", value)
         self._results_node.set_value(
             opcua.ua.DataValue(opcua.ua.Variant(value, opcua.ua.VariantType.String))
