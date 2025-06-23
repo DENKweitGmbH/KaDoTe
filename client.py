@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import ids_peak_ipl.ids_peak_ipl as ids_ipl
 import numpy as np
+import numpy.typing as npt
 import opcua
 import open3d as o3d
 from harvesters.core import (
@@ -38,15 +39,13 @@ with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     from ids_peak import ids_peak
 
+from evaluate import EvalParameters, EvalResult3D, Libdenk
 from matplotlib import pyplot as plt
 from PIL import Image
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-import eval_types
-
-from evaluate import Libdenk
 
 # ruff: noqa: T201, D101, D102, D103, D107, DOC201
 
@@ -78,15 +77,14 @@ class CameraParameters(TypedDict, total=True):
     save_dir: Path
 
 
-
 class Gui:
     def __init__(  # noqa: PLR0915
         self,
         capture_image: Callable[[CameraParameters], Path],
         camera_parameters: CameraParameters,
         acquire_point_cloud: Callable[[], Buffer | None] | None,
-        evaluate_image_3d: Callable[[Path, eval_types.EvalParameters, np.ndarray, float], eval_types.EvalResult3D],
-        eval_parameters: eval_types.EvalParameters,
+        evaluate_image_3d: Callable[[Path, EvalParameters, npt.NDArray[np.float64]], EvalResult3D],
+        eval_parameters: EvalParameters,
     ) -> None:
         """Initialize GUI."""
         self.capture_image = capture_image
@@ -274,10 +272,12 @@ class Gui:
 
     def eval_and_display(self) -> None:
         """Evaluate image and display result."""
-        if self.last_image_file is None:
+        if self.last_image_file is None or self.point_cloud_data is None:
             return
-        res = self.evaluate_image(self.last_image_file, self.eval_parameters)
-        self.save_and_display_image(*res, self.last_image_file)
+        res_img, _objs = self.evaluate_image_3d(
+            self.last_image_file, self.eval_parameters, self.point_cloud_data
+        )
+        self.save_and_display_image(res_img, self.last_image_file)
 
     def update_camera_textbox(self, new_info: str) -> None:
         self.textbox_camera_tab.config(state=tk.NORMAL)  # Set state to normal to allow editing
@@ -361,12 +361,10 @@ class Gui:
         plt.show(block=False)
 
     def save_and_display_image(
-        self, img_buffer: bytes, img_w: int, img_h: int, img_c: int, image_file: str | Path
+        self, img_array: npt.NDArray[np.uint8], image_file: str | Path
     ) -> None:
         """Display the output image."""
-        array = np.frombuffer(img_buffer, dtype=np.uint8, count=(img_w * img_h * img_c), offset=0)
-        array.shape = (img_h, img_w, img_c)  # h, w, c
-        img = Image.fromarray(array)
+        img = Image.fromarray(img_array)
         image_file = Path(image_file)
         name = image_file.stem
         ext = image_file.suffix
@@ -798,16 +796,16 @@ class MockEvaluation:
     def evaluate_image_3d(
         self,
         image_file: str | Path,
-        _eval_parameters: eval_types.EvalParameters,
-    ) -> eval_types.EvalResult3D:
+        _eval_parameters: EvalParameters,
+        _point_cloud: npt.NDArray[np.float64],
+    ) -> EvalResult3D:
         log = logging.getLogger().getChild("libdenk.mock")
         self.console("Evaluating image...")
         # Do nothing, return as-is
         with Image.open(image_file) as img:
-            ret = img.tobytes(), img.width, img.height, 3
-        self.console("Evaluating image done.")
-        log.info("Evaluating image done.")
-        return ret
+            self.console("Evaluating image done.")
+            log.info("Evaluating image done.")
+            return np.array(img), []
 
 
 def check_acquire_and_evaluate(
@@ -842,13 +840,15 @@ def check_acquire_and_evaluate(
         # Evaluate the images if we executed the last stage
         if camera.last_image_file is None:
             log.warning("Cannot evaluate, camera image is missing!")
+        elif gui.point_cloud_data is None:
+            log.warning("Cannot evaluate, point cloud is missing!")
         else:
-            # TODO: Do something with the point cloud?
-            image, w, h, c = libdenk.evaluate_image_3d(camera.last_image_file, gui.eval_parameters)
-            gui.save_and_display_image(image, w, h, c, camera.last_image_file)
-            # TODO: Create actual results here
+            image, found_objects = libdenk.evaluate_image_3d(
+                camera.last_image_file, gui.eval_parameters, gui.point_cloud_data
+            )
+            gui.save_and_display_image(image, camera.last_image_file)
             client.results = json.dumps(
-                [eval_types.AnalysisResult(x=0, y=0, z=0, r=0, p=0, yaw=0, t=eval_types.ObjectType.Unknown, pr=100)],
+                found_objects,
                 separators=(",", ":"),
             )
         # Reset flag to signal completion
@@ -952,6 +952,21 @@ def _parse_args(args: list[str]) -> Namespace:
         type=Path,
         help="Wenglor depth sensor config file",
     )
+
+    analysis_group = parser.add_argument_group("Image Analysis")
+    analysis_group.add_argument(
+        "--camera-calibration",
+        type=Path,
+        default=Path(__file__).absolute() / "configs" / "camera_calibration.json",
+        help="Camera calibration data file.",
+    )
+    analysis_group.add_argument(
+        "--camera-position",
+        type=Path,
+        default=Path(__file__).absolute() / "configs" / "camera_position.json",
+        help="Camera position data file.",
+    )
+
     opcua_group = parser.add_argument_group("OPCUA")
     opcua_group.add_argument(
         "--local-only",
@@ -993,7 +1008,7 @@ def _parse_args(args: list[str]) -> Namespace:
 
 def _create_configs_from(
     args: Namespace,
-) -> tuple[OpcuaServerConfig, CameraParameters, WenglorConfig, eval_types.EvalParameters]:
+) -> tuple[OpcuaServerConfig, CameraParameters, WenglorConfig, EvalParameters]:
     log = logging.getLogger()
     if args.opcua_config:
         with args.opcua_config.open("r", encoding="utf-8") as f:
@@ -1017,7 +1032,7 @@ def _create_configs_from(
             wenglor_config = WenglorConfig(save_dir=args.save_dir, **config)
     else:
         wenglor_config = WenglorConfig(save_dir=args.save_dir)
-    eval_parameters = eval_types.EvalParameters(probability_threshold=0.75)
+    eval_parameters = EvalParameters(probability_threshold=0.75)
     return opcua_server_config, camera_parameters, wenglor_config, eval_parameters
 
 
@@ -1049,7 +1064,11 @@ def main(args_: list[str]) -> None:  # noqa: C901, PLR0912
                 return
 
         try:
-            libdenk: Libdenk | MockEvaluation = Libdenk(token=args.token.read_text().strip())
+            libdenk: Libdenk | MockEvaluation = Libdenk(
+                camera_calibration_data_path=args.camera_calibration,
+                camera_position_data_path=args.camera_position,
+                token=args.token.read_text().strip(),
+            )
         except OSError:
             log.exception("Cannot init libdenk:")
             if args.allow_missing_hardware:
@@ -1072,7 +1091,7 @@ def main(args_: list[str]) -> None:  # noqa: C901, PLR0912
             camera.capture_image,
             camera_parameters,
             wenglor.acquire_point_cloud if wenglor else None,
-            libdenk.evaluate_image,
+            libdenk.evaluate_image_3d,
             eval_parameters,
         )
         if args.dont_show_image:

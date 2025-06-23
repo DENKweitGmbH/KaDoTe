@@ -12,8 +12,10 @@ dependencies = [
     "numpy>=2.1.1",
     "opcua>=0.98.13",
     "open3d>=0.18.0",
+    "opencv-python>=4.11.0.86",
     "pillow>=10.4.0",
     "protobuf==3.20",
+    "types-protobuf>=6.30.2.20250516",
 ]
 
 [project.optional-dependencies]
