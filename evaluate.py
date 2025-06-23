@@ -58,7 +58,7 @@ class AnalysisResult(TypedDict, total=True):
     r: float
     p: float
     yaw: float
-    t: ObjectType
+    t: int
     c: float
 
 
@@ -375,7 +375,7 @@ class Libdenk:
                 "p": 0.0,
                 "r": 0.0,
                 "yaw": 0.0,
-                "t": obj["type"],
+                "t": obj["type"].value,
                 "c": 100.0 * obj["confidence"],
             })
 
