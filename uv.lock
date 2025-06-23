@@ -510,6 +510,7 @@ dependencies = [
     { name = "opencv-python" },
     { name = "pillow" },
     { name = "protobuf" },
+    { name = "scipy" },
     { name = "types-protobuf" },
 ]
 
@@ -539,6 +540,7 @@ requires-dist = [
     { name = "opencv-python", specifier = ">=4.11.0.86" },
     { name = "pillow", specifier = ">=10.4.0" },
     { name = "protobuf", specifier = "~=5.28" },
+    { name = "scipy", specifier = ">=1.14.1" },
     { name = "types-protobuf", specifier = ">=6.30.2.20250516" },
 ]
 provides-extras = ["server"]
