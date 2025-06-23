@@ -69,6 +69,12 @@ options:
                         Wenglor depth sensor config file (default: None)
   --save-dir SAVE_DIR   Save directory (default ./results)
 
+Image Analysis:
+  --camera-calibration CAMERA_CALIBRATION
+                        Camera calibration data file. (default: ./configs/camera_calibration.json)
+  --camera-position CAMERA_POSITION
+                        Camera position data file. (default: ./configs/camera_position.json)
+
 OPCUA:
   --local-only          Disable periodic pulling from OPCUA server, limiting functionality. (default: False)
   --check-interval CHECK_INTERVAL
