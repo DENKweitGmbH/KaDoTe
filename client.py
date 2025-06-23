@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import contextlib
+import ctypes
 import datetime as dt
 import gzip
 import json
@@ -21,6 +22,15 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import ttk
 from typing import TYPE_CHECKING, Any, TypedDict, cast
+
+if sys.platform == "win32":
+    # Try to load the libdenk dll once to ensure the correct redis version is used.
+    # Needs to be done before numpy is imported
+    cwd = Path.cwd()
+    dll = cwd / "denk.dll"
+    if dll.is_file():
+        os.add_dll_directory(str(cwd))
+        ctypes.cdll.LoadLibrary("denk.dll")
 
 import ids_peak_ipl.ids_peak_ipl as ids_ipl
 import numpy as np
