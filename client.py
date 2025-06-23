@@ -531,10 +531,10 @@ class OpcuaClient:
         return self.client.get_node(self.config.path(self.config.nodes.results))
 
     @property
-    def results(self) -> str:
+    def results(self) -> list[str]:
         if self.client is None:
-            return ""
-        return cast("str", self._results_node.get_value())
+            return []
+        return cast("list[str]", self._results_node.get_value())
 
     @results.setter
     def results(self, value: list[str]) -> None:
@@ -542,7 +542,7 @@ class OpcuaClient:
             return
         # TODO: Should set each entry of array
         self._results_node.set_value(
-            opcua.ua.DataValue(opcua.ua.Variant(str(value), opcua.ua.VariantType.String))
+            opcua.ua.DataValue(opcua.ua.Variant(value, opcua.ua.VariantType.String))
         )
 
     def close(self) -> None:

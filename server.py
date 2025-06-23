@@ -16,7 +16,7 @@ except ImportError:
     has_keyboard = False
 
 from opcua import Server
-from opcua.ua import StringNodeId
+from opcua.ua import DataValue, Variant, VariantType
 
 # ruff: noqa: T201, D103
 
@@ -65,7 +65,7 @@ def main(args_: list[str]) -> None:  # noqa: PLR0915
     capture_image_2 = node.add_variable(ns, "CaptureImage2", val=False)
     capture_image_2.set_writable()
     # TODO: Should be array of strings
-    results = node.add_variable(ns, "Results", "", datatype=StringNodeId("String", ns))
+    results = node.add_variable(ns, "Results", ["{}"])
     results.set_writable()
 
     # Start the server
@@ -102,8 +102,8 @@ def main(args_: list[str]) -> None:  # noqa: PLR0915
             # Check if client acquired image
             if next_stage == 1 and (res := results.get_value()):
                 log.info("Analysis done")
-                log.info("Results are: %s (raw: %r)", json.loads(res), res)
-                results.set_value("")
+                log.info("Results are: %s (raw: %r)", [json.loads(obj) for obj in res], res)
+                results.set_value(DataValue(Variant([], VariantType.String)))
             if args.disable_keyboard:
                 continue
 
