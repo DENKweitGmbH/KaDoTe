@@ -530,8 +530,9 @@ class OpcuaClient:
     def results(self, value: list[str]) -> None:
         if self.client is None or not value:
             return
+        # TODO: Should set each entry of array
         self._results_node.set_value(
-            opcua.ua.DataValue(opcua.ua.Variant(value[0], opcua.ua.VariantType.String))
+            opcua.ua.DataValue(opcua.ua.Variant(str(value), opcua.ua.VariantType.String))
         )
 
     def close(self) -> None:
