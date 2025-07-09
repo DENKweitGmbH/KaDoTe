@@ -64,8 +64,8 @@ def main(args_: list[str]) -> None:  # noqa: PLR0915
     capture_image_1.set_writable()
     capture_image_2 = node.add_variable(ns, "CaptureImage2", val=False)
     capture_image_2.set_writable()
-    # TODO: Should be array of strings
-    results = node.add_variable(ns, "Results", ["{}"])
+    results = node.add_variable(ns, "Results", ["{}", "{}"])
+    results.set_array_dimensions(99)
     results.set_writable()
 
     # Start the server
@@ -88,6 +88,7 @@ def main(args_: list[str]) -> None:  # noqa: PLR0915
                 and not capture_image_2.get_value()
             ):
                 # Send capture image once every x seconds
+                log.debug("results: %s", results.get_value())
                 if next_stage == 1:
                     capture_image_1.set_value(True)
                     log.info("Set 'CaptureImage1'")

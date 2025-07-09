@@ -73,10 +73,13 @@ class OpcuaServerConfig:
     namespace: int
     nodes: OpcuaNodes
 
-    def path(self, name_or_index: str | int, /) -> str:
+    def path(self, name_or_index: str | int, /, array_index: int | None = None) -> str:
         """Convert node name to OPCUA node 'path'."""
         if isinstance(name_or_index, str):
-            return f"ns={self.namespace};s={name_or_index}"
+            if array_index is None:
+                return f"ns={self.namespace};s={name_or_index}"
+            return f"ns={self.namespace};s={name_or_index}[{array_index}]"
+        assert array_index is None, "Cannot supply array index for integer nodes"  # noqa: S101
         return f"ns={self.namespace};i={name_or_index:d}"
 
 
@@ -524,17 +527,20 @@ class OpcuaClient:
         )
 
     @property
-    def _results_node(self) -> opcua.Node:
+    def _results_node(self) -> list[opcua.Node]:
         if self.client is None:
             msg = "Client not connected to server"
             raise ValueError(msg)
-        return self.client.get_node(self.config.path(self.config.nodes.results))
+        return [
+            self.client.get_node(self.config.path(self.config.nodes.results, array_index=index))
+            for index in range(1, 100)
+        ]
 
     @property
     def results(self) -> list[str]:
         if self.client is None:
             return []
-        return cast("list[str]", self._results_node.get_value())
+        return cast("list[str]", [val for node in self._results_node if (val := node.get_value())])
 
     @results.setter
     def results(self, value: list[str]) -> None:
@@ -543,9 +549,8 @@ class OpcuaClient:
         if not value:
             value = [""]
         self.log.debug("Sending results to server: %s", value)
-        self._results_node.set_value(
-            opcua.ua.DataValue(opcua.ua.Variant(value, opcua.ua.VariantType.String))
-        )
+        size = min(99, len(value))
+        self.client.set_values(self._results_node[:size], value[:size])
 
     def close(self) -> None:
         if self.client is None:
