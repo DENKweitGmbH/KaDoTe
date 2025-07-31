@@ -546,11 +546,10 @@ class OpcuaClient:
     def results(self, value: list[str]) -> None:
         if self.client is None:
             return
-        if not value:
-            value = [""]
         self.log.debug("Sending results to server: %s", value)
-        size = min(99, len(value))
-        self.client.set_values(self._results_node[:size], value[:size])
+        # Always reset all values
+        value = [*value, *([""] * (99 - len(value)))]
+        self.client.set_values(self._results_node, value)
 
     def close(self) -> None:
         if self.client is None:
