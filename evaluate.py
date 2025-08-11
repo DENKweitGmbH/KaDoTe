@@ -9,26 +9,23 @@ import os
 import struct
 import sys
 import time
+from enum import IntEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict
 
 import cv2
 import numpy as np
 import numpy.typing as npt
+import results_pb2
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-from enum import IntEnum
-from typing import TypeAlias, TypedDict
-
-import results_pb2
 
 
 class EvalParameters(TypedDict, total=True):
     """Parameters for image analysis."""
 
-    probability_threshold: float
+    confidence_threshold: float
 
 
 class ObjectType(IntEnum):
@@ -245,7 +242,7 @@ class Libdenk:
         self.console("Evaluating image...")
         self.log.info("Evaluating image...")
 
-        probability_threshold = eval_parameters["probability_threshold"]
+        confidence_threshold = eval_parameters["confidence_threshold"]
         # Open the image file in the "read bytes" mode and read the data
         img_data = Path(image_file).read_bytes()
 
@@ -286,8 +283,8 @@ class Libdenk:
             if otpt.result_field_type != results_pb2.RFT_REGULAR:
                 continue
             for ftr in otpt.feature:
-                if ftr.probability > probability_threshold:
-                    print_str = f"Found {ftr.label} at\tx = {ftr.rect_x}\tand y = {ftr.rect_y}\twith probabilty p = {ftr.probability}"
+                if ftr.probability > confidence_threshold:
+                    print_str = f"Found '{ftr.label}' at: x={ftr.rect_x}, y={ftr.rect_y} (confidence: {ftr.probability:.3f})"
                     self.log.debug(print_str)
                     self.console(print_str)
                     objects.append({

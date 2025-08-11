@@ -32,7 +32,7 @@
     },
     "t": {
       "type": "float",
-      "comment": "Object type. See client.ObjectType enum for possible values."
+      "comment": "Object type. See evaluate.ObjectType enum for possible values."
     },
     "c": {
       "type": "float",

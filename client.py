@@ -184,7 +184,7 @@ class Gui:
         )
         self.evaluate_image_button.grid(row=0, column=0, columnspan=5)
 
-        self.detection_threshold_label = tk.Label(self.ai_tab_frame, text="Min probability [%]:")
+        self.detection_threshold_label = tk.Label(self.ai_tab_frame, text="Min confidence [%]:")
         self.detection_threshold_label.grid(row=1, column=0, columnspan=2)
         self.entry_detection_threshold = tk.Entry(
             self.ai_tab_frame,
@@ -355,8 +355,8 @@ class Gui:
         try:
             var = int(self.entry_detection_threshold.get())
             if var >= 1 and var <= 100:  # noqa: PLR2004
-                self.eval_parameters["probability_threshold"] = var / 100
-                self.update_ai_textbox(f"Probability_threshold set to {var}%.")
+                self.eval_parameters["confidence_threshold"] = var / 100
+                self.update_ai_textbox(f"confidence_threshold set to {var}%.")
             else:
                 self.update_ai_textbox("Enter a value between 1 and 100.")
         except ValueError:
@@ -1080,7 +1080,7 @@ def _create_configs_from(
             wenglor_config = WenglorConfig(save_dir=args.save_dir, **config)
     else:
         wenglor_config = WenglorConfig(save_dir=args.save_dir)
-    eval_parameters = EvalParameters(probability_threshold=0.75)
+    eval_parameters = EvalParameters(confidence_threshold=0.75)
     return opcua_server_config, camera_parameters, wenglor_config, eval_parameters
 
 
