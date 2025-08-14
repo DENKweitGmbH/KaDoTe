@@ -1330,7 +1330,7 @@ class PointPairSelector:
                         index = np.argmin(distances_sq)
                         nearest_3d_point = pc_slice_for_search[index]
 
-                    point_b_to_store = tuple(nearest_3d_point)  # Store (X,Y,Z)
+                    point_b_to_store = (nearest_3d_point[0], world_y_click, world_z_click) # Store (X,Y,Z)
                     point_b_display_suffix = f"PC({point_b_to_store[0]:.2f}, {point_b_to_store[1]:.2f}, {point_b_to_store[2]:.2f})"
                 else:
                     self.set_status("Could not map heatmap click to world YZ coordinates.")
