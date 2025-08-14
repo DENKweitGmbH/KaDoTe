@@ -343,7 +343,7 @@ class Libdenk:
         image_file: str | Path,
         eval_parameters: EvalParameters,
         point_cloud: npt.NDArray[np.float64],
-        distance_threshold: float = 5.0,
+        distance_threshold: float = 15.0,
     ) -> EvalResult3D:
         img_array, objects = self.evaluate_image_2d(image_file, eval_parameters)
 
