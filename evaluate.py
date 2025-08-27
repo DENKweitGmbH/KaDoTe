@@ -352,25 +352,67 @@ class Libdenk:
         analysis_results: list[AnalysisResult] = []
 
         for obj in objects:
-            middle_x = (obj["x1"] + obj["x2"]) // 2
-            middle_y = (obj["y1"] + obj["y2"]) // 2
-
-            point_in_space = self.mapper.find_3d_point_from_pixel(
-                middle_x, middle_y, distance_threshold
+            top_left = self.mapper.find_3d_point_from_pixel(
+                obj["x1"], obj["y1"], distance_threshold
             )
-
-            if point_in_space is None:
+            if top_left is None:
                 self.log.warning(
-                    "No 3D point found for object at x: %s and y: %s", middle_x, middle_y
+                    "No 3D point found for 2D point at x: %s and y: %s", obj["x1"], obj["y1"]
+                )
+                continue
+            top_right = self.mapper.find_3d_point_from_pixel(
+                obj["x2"], obj["y1"], distance_threshold
+            )
+            if top_right is None:
+                self.log.warning(
+                    "No 3D point found for 2D point at x: %s and y: %s", obj["x2"], obj["y1"]
+                )
+                continue
+            bottom_right = self.mapper.find_3d_point_from_pixel(
+                obj["x2"], obj["y2"], distance_threshold
+            )
+            if bottom_right is None:
+                self.log.warning(
+                    "No 3D point found for 2D point at x: %s and y: %s", obj["x2"], obj["y2"]
+                )
+                continue
+            bottom_left = self.mapper.find_3d_point_from_pixel(
+                obj["x1"], obj["y2"], distance_threshold
+            )
+            if bottom_left is None:
+                self.log.warning(
+                    "No 3D point found for 2D point at x: %s and y: %s", obj["x1"], obj["y2"]
                 )
                 continue
 
+            points_matrix = np.array([top_left, top_right, bottom_right, bottom_left])
+
+            centroid = np.mean(points_matrix, axis=0)
+
+            centered_points = points_matrix - centroid
+            _, _, Vt = np.linalg.svd(centered_points)
+
+            normal = Vt[2]
+
+            # ensure that the normal vector always faces towards the origin
+            if np.dot(normal, -centroid) < 0:
+                normal *= -1
+
+            pitch_rad = np.arcsin(normal[0])
+            roll_rad = np.arctan2(normal[1], normal[2])
+
+            # pitch  0°, roll  0° => normal parallel to z-axis (positive direction)
+            # pitch 90°, roll  0° => normal parallel to x-axis (positive direction)
+            # pitch  0°, roll 90° => normal parallel to y-axis (positive direction)
+            pitch_deg = np.degrees(pitch_rad)
+            roll_deg = np.degrees(roll_rad)
+
             analysis_results.append({
-                "x": round(float(point_in_space[0]), 2),
-                "y": round(float(point_in_space[1]), 2),
-                "z": round(float(point_in_space[2]), 2),
-                "p": 0.0,
-                "r": 0.0,
+                "x": round(float(centroid[0]), 2),
+                "y": round(float(centroid[1]), 2),
+                "z": round(float(centroid[2]), 2),
+                "p": round(float(pitch_deg, 2)),
+                "r": round(float(roll_deg, 2)),
                 "yaw": 0.0,
                 "t": obj["type"].value,
                 "c": round(100.0 * obj["confidence"], 1),
