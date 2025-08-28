@@ -19,6 +19,7 @@ import warnings
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from dataclasses import dataclass
 from datetime import datetime
+from itertools import cycle
 from pathlib import Path
 from tkinter import ttk
 from typing import TYPE_CHECKING, Any, TypedDict, cast
@@ -288,7 +289,11 @@ class Gui:
         if self.last_image_file is None or (pc := self.get_last_point_cloud()) is None:
             return
 
-        res_img, _objs = self.evaluate_image_3d(self.last_image_file, self.eval_parameters, pc)
+        res_img, found_objects = self.evaluate_image_3d(
+            self.last_image_file, self.eval_parameters, pc
+        )
+        logging.getLogger().getChild("gui").info("Found objects: %s", found_objects)
+        self.update_ai_textbox("Found objects:\n\t" + "\n\t".join(map(str, found_objects)))
         self.save_and_display_image(res_img, self.last_image_file)
 
     def update_camera_textbox(self, new_info: str) -> None:
@@ -812,12 +817,17 @@ class MockWenglor:
     def __init__(self) -> None:
         self.console: Callable[[str], None] = lambda _s: None
         self.log = logging.getLogger().getChild("wenglor.mock")
-        self.pc_file: Path = Path("40cm.npy")
+        self.pc_files = cycle(sorted(Path("fotos-fuer-denkweit_08_20").glob("*.npy")))
+
+    @property
+    def pc_file(self) -> Path:
+        return next(self.pc_files)
 
     def acquire_point_cloud(self) -> Buffer | None:
-        self.console("Acquiring dummy point cloud...")
-        self.log.info("Acquiring dummy point cloud...")
-        data = np.load(self.pc_file)
+        file = self.pc_file
+        self.console("Acquiring dummy point cloud.")
+        self.log.info("Acquiring dummy point cloud (%s).", file)
+        data = np.load(file)
         return MockWenglor._MockBuffer(
             MockWenglor._MockPayload((None, MockWenglor._MockData(data)))
         )
@@ -831,12 +841,17 @@ class MockCamera:
     def __init__(self) -> None:
         self.console: Callable[[str], None] = lambda _s: None
         self.log = logging.getLogger().getChild("ids.mock")
-        self.last_image_file: Path = Path("testimage.jpg")
+        self.image_files = cycle(sorted(Path("fotos-fuer-denkweit_08_20").glob("*.jpg")))
+
+    @property
+    def last_image_file(self) -> Path:
+        return next(self.image_files)
 
     def capture_image(self, _params: CameraParameters) -> Path:
-        self.log.info("Acquiring dummy image.")
+        file = self.last_image_file
+        self.log.info("Acquiring dummy image (%s).", file)
         self.console("Acquiring dummy image.")
-        return self.last_image_file
+        return file
 
 
 class MockEvaluation:
@@ -898,7 +913,7 @@ def check_acquire_and_evaluate(
             )
             log.info("Found objects: %s", found_objects)
             gui.save_and_display_image(image, camera.last_image_file)
-            client.results = [json.dumps(obj, separators=(",", ":")) for obj in found_objects]  # type: ignore[assignment]
+            client.results = [json.dumps(obj, separators=(",", ":")) for obj in found_objects]
         # Reset flag to signal completion
         client.capture_image_2 = False
 

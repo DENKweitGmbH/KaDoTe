@@ -9,9 +9,10 @@ import os
 import struct
 import sys
 import time
+from collections import defaultdict
 from enum import IntEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict
+from typing import TYPE_CHECKING, Any, Final, TypeAlias, TypedDict
 
 import cv2
 import numpy as np
@@ -20,6 +21,9 @@ import results_pb2
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+
+# ruff: noqa: T201, D101, D102, D103, D107, DOC201
 
 
 class EvalParameters(TypedDict, total=True):
@@ -32,6 +36,17 @@ class ObjectType(IntEnum):
     """Classification object type."""
 
     Unknown = -1
+    Screw = 0
+    Hexagon = 1
+
+
+OBJECT_TYPE_MAP: Final[dict[str, ObjectType]] = defaultdict(
+    lambda: ObjectType.Unknown,
+    {
+        "SCHRAUBE": ObjectType.Screw,
+        "SECHSKAN": ObjectType.Hexagon,
+    },
+)
 
 
 class _ImageObject(TypedDict, total=True):
@@ -239,8 +254,8 @@ class Libdenk:
         image_file: str | Path,
         eval_parameters: EvalParameters,
     ) -> EvalResult2D:
-        self.console("Evaluating image...")
-        self.log.info("Evaluating image...")
+        self.console("Evaluating 2D image...")
+        self.log.info("Evaluating 2D image...")
 
         confidence_threshold = eval_parameters["confidence_threshold"]
         # Open the image file in the "read bytes" mode and read the data
@@ -274,17 +289,17 @@ class Libdenk:
         self.print_formatted_return("GetResults", retval)
 
         # Parse the results
-        results_proto = results_pb2.Results()
+        results_proto = results_pb2.Results()  # type: ignore  # noqa: PGH003
         results_proto.ParseFromString(results[: results_size.value])
 
         # Print some results
         objects: list[_ImageObject] = []
         for otpt in results_proto.output:
-            if otpt.result_field_type != results_pb2.RFT_REGULAR:
+            if otpt.result_field_type != results_pb2.RFT_REGULAR:  # type: ignore  # noqa: PGH003
                 continue
             for ftr in otpt.feature:
                 if ftr.probability > confidence_threshold:
-                    print_str = f"Found '{ftr.label}' at: x={ftr.rect_x}, y={ftr.rect_y} (confidence: {ftr.probability:.3f})"
+                    print_str = f"\tFound '{ftr.label}' at: x={ftr.rect_x:4d}, y={ftr.rect_y:4d} (confidence: {ftr.probability:.3f})"
                     self.log.debug(print_str)
                     self.console(print_str)
                     objects.append({
@@ -293,7 +308,7 @@ class Libdenk:
                         "x2": ftr.rect_x + ftr.rect_w,
                         "y2": ftr.rect_y + ftr.rect_h,
                         "confidence": ftr.probability,
-                        "type": ObjectType.Unknown,
+                        "type": OBJECT_TYPE_MAP[ftr.label],
                     })
 
         # To allocate the correct buffer size, the image dimensions will be taken from the original image
@@ -328,8 +343,8 @@ class Libdenk:
         )
 
         self.print_formatted_return("DrawBoxes", retval)
-        self.console("Evaluating image done.")
-        self.log.info("Evaluating image done.")
+        self.console("Evaluating 2D image done.")
+        self.log.info("Evaluating 2D image done.")
 
         img_array = np.frombuffer(
             image, dtype=np.uint8, count=(w.value * h.value * c.value), offset=0
@@ -345,44 +360,49 @@ class Libdenk:
         point_cloud: npt.NDArray[np.float64],
         distance_threshold: float = 15.0,
     ) -> EvalResult3D:
-        img_array, objects = self.evaluate_image_2d(image_file, eval_parameters)
+        img_array, objects_2d = self.evaluate_image_2d(image_file, eval_parameters)
 
+        self.console("Evaluating 2D objects with pointcloud...")
+        self.log.info("Evaluating 2D objects with pointcloud...")
         self.mapper.load_point_cloud(point_cloud)
 
         analysis_results: list[AnalysisResult] = []
 
-        for obj in objects:
+        for obj in objects_2d:
             top_left = self.mapper.find_3d_point_from_pixel(
                 obj["x1"], obj["y1"], distance_threshold
             )
-            if top_left is None:
-                self.log.warning(
-                    "No 3D point found for 2D point at x: %s and y: %s", obj["x1"], obj["y1"]
-                )
-                continue
             top_right = self.mapper.find_3d_point_from_pixel(
                 obj["x2"], obj["y1"], distance_threshold
             )
-            if top_right is None:
-                self.log.warning(
-                    "No 3D point found for 2D point at x: %s and y: %s", obj["x2"], obj["y1"]
-                )
-                continue
             bottom_right = self.mapper.find_3d_point_from_pixel(
                 obj["x2"], obj["y2"], distance_threshold
             )
-            if bottom_right is None:
-                self.log.warning(
-                    "No 3D point found for 2D point at x: %s and y: %s", obj["x2"], obj["y2"]
-                )
-                continue
             bottom_left = self.mapper.find_3d_point_from_pixel(
                 obj["x1"], obj["y2"], distance_threshold
             )
-            if bottom_left is None:
-                self.log.warning(
-                    "No 3D point found for 2D point at x: %s and y: %s", obj["x1"], obj["y2"]
-                )
+            if missing := len([
+                p for p in (top_left, top_right, bottom_right, bottom_left) if p is None
+            ]):
+                warn = f"Missing {missing}/4 3D point(s) for object of type '{obj['type'].name}':"
+                self.log.warning(warn)
+                self.console(warn)
+                if top_left is None:
+                    warn = f"\ttop-left     at: x={obj['x1']:4d}, y={obj['y1']:4d}"
+                    self.log.warning(warn)
+                    self.console(warn)
+                if top_right is None:
+                    warn = f"\ttop-right    at: x={obj['x2']:4d}, y={obj['y1']:4d}"
+                    self.log.warning(warn)
+                    self.console(warn)
+                if bottom_right is None:
+                    warn = f"\tbottom-right at: x={obj['x2']:4d}, y={obj['y2']:4d}"
+                    self.log.warning(warn)
+                    self.console(warn)
+                if bottom_left is None:
+                    warn = f"\tbottom-left  at: x={obj['x1']:4d}, y={obj['y2']:4d}"
+                    self.log.warning(warn)
+                    self.console(warn)
                 continue
 
             points_matrix = np.array([top_left, top_right, bottom_right, bottom_left])
@@ -395,7 +415,7 @@ class Libdenk:
             normal = Vt[2]
 
             # ensure that the normal vector always faces towards the origin
-            if np.dot(normal, -centroid) < 0:
+            if normal[2] < 0:
                 normal *= -1
 
             pitch_rad = np.arcsin(normal[0])
@@ -406,18 +426,30 @@ class Libdenk:
             # pitch  0°, roll 90° => normal parallel to y-axis (positive direction)
             pitch_deg = np.degrees(pitch_rad)
             roll_deg = np.degrees(roll_rad)
+            if abs(pitch_deg) >= 30:  # noqa: PLR2004
+                warn = f"Pitch is large ({pitch_deg:.2f})! This could indicate an error"
+                self.log.warning(warn)
+                self.console(warn)
+            if abs(roll_deg) >= 30:  # noqa: PLR2004
+                warn = f"Roll is large ({roll_deg:.2f})! This could indicate an error"
+                self.log.warning(warn)
+                self.console(warn)
 
             analysis_results.append({
                 "x": round(float(centroid[0]), 2),
                 "y": round(float(centroid[1]), 2),
                 "z": round(float(centroid[2]), 2),
-                "p": round(float(pitch_deg, 2)),
-                "r": round(float(roll_deg, 2)),
+                "p": round(float(pitch_deg), 2),
+                "r": round(float(roll_deg), 2),
                 "yaw": 0.0,
                 "t": obj["type"].value,
                 "c": round(100.0 * obj["confidence"], 1),
             })
-
+        info = f"Found {len(analysis_results)}/{len(objects_2d)} objects in 3D space"
+        self.log.debug(info)
+        self.console(info)
+        self.console("Evaluating 2D objects with pointcloud done.")
+        self.log.info("Evaluating 2D objects with pointcloud done.")
         return img_array, analysis_results
 
     @staticmethod
@@ -450,9 +482,9 @@ class Libdenk:
         code = struct.pack(">i", retval).hex().upper()
         ok = retval == self.DE_NO_ERROR
         if t is None:
-            self.log.info("%s returned: %s", function_name, code)
+            self.log.debug("%s returned: %s", function_name, code)
         else:
-            self.log.info("%s returned: %s ({%s} s)", function_name, code, t)
+            self.log.debug("%s returned: %s ({%s} s)", function_name, code, t)
         if raise_on_error and not ok:
             msg = f"Libdenk function {function_name} returned code {code}!"
             raise RuntimeError(msg)

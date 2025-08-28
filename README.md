@@ -44,6 +44,17 @@ Installing packages via `conda` or `pip` instead of `uv` should work as well, bu
 * Upgrade all packages via `uv sync --upgrade`
 * Upgrade one package via `uv sync -P <package>`
 
+## Results schema
+
+Objects found are returned as json objects (inside an OPCUA string array).  See [./schemas/results.schema.json](./schemas/results.schema.json) for the json schema.
+The angles are defined as follows:
+
+* pitch  0°, roll  0° => object plane normal is parallel to z-axis (positive direction)
+* pitch 90°, roll  0° => object plane normal is parallel to x-axis (positive direction)
+* pitch  0°, roll 90° => object plane normal is parallel to y-axis (positive direction)
+
+The `yaw` is currently unused. The different types of objects are defined via the [`ObjectType` enum](./evaluate.py).
+
 ## How to run Analysis Client
 
 ```shell
