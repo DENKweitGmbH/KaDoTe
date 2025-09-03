@@ -1029,6 +1029,11 @@ def _parse_args(args: list[str]) -> Namespace:
         default=Path(__file__).parent.absolute() / "configs" / "camera_position.json",
         help="Camera position data file.",
     )
+    analysis_group.add_argument(
+        "--compute-angles",
+        action="store_true",
+        help="Compute object rotations (otherwise they are always 0).",
+    )
 
     opcua_group = parser.add_argument_group("OPCUA")
     opcua_group.add_argument(
@@ -1095,7 +1100,7 @@ def _create_configs_from(
             wenglor_config = WenglorConfig(save_dir=args.save_dir, **config)
     else:
         wenglor_config = WenglorConfig(save_dir=args.save_dir)
-    eval_parameters = EvalParameters(confidence_threshold=0.75)
+    eval_parameters = EvalParameters(confidence_threshold=0.75, compute_angles=args.compute_angles)
     return opcua_server_config, camera_parameters, wenglor_config, eval_parameters
 
 

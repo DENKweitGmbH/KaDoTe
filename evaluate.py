@@ -30,6 +30,7 @@ class EvalParameters(TypedDict, total=True):
     """Parameters for image analysis."""
 
     confidence_threshold: float
+    compute_angles: bool
 
 
 class ObjectType(IntEnum):
@@ -365,91 +366,105 @@ class Libdenk:
         self.console("Evaluating 2D objects with pointcloud...")
         self.log.info("Evaluating 2D objects with pointcloud...")
         self.mapper.load_point_cloud(point_cloud)
-
+        compute_angles = eval_parameters["compute_angles"]
         analysis_results: list[AnalysisResult] = []
 
         for obj in objects_2d:
-            top_left = self.mapper.find_3d_point_from_pixel(
-                obj["x1"], obj["y1"], distance_threshold
-            )
-            top_right = self.mapper.find_3d_point_from_pixel(
-                obj["x2"], obj["y1"], distance_threshold
-            )
-            bottom_right = self.mapper.find_3d_point_from_pixel(
-                obj["x2"], obj["y2"], distance_threshold
-            )
-            bottom_left = self.mapper.find_3d_point_from_pixel(
-                obj["x1"], obj["y2"], distance_threshold
-            )
-            if missing := len([
-                p for p in (top_left, top_right, bottom_right, bottom_left) if p is None
-            ]):
+            top_left = top_right = bottom_right = bottom_left = None
+            if compute_angles:
+                top_left = self.mapper.find_3d_point_from_pixel(
+                    obj["x1"], obj["y1"], distance_threshold
+                )
+                top_right = self.mapper.find_3d_point_from_pixel(
+                    obj["x2"], obj["y1"], distance_threshold
+                )
+                bottom_right = self.mapper.find_3d_point_from_pixel(
+                    obj["x2"], obj["y2"], distance_threshold
+                )
+                bottom_left = self.mapper.find_3d_point_from_pixel(
+                    obj["x1"], obj["y2"], distance_threshold
+                )
+                if missing := len([
+                    p for p in (top_left, top_right, bottom_right, bottom_left) if p is None
+                ]):
+                    info = "Using fallback centroid to calculate position of object"
+                    self.log.debug(info)
+                    self.console(info)
+                    middle_x = (obj["x1"] + obj["x2"]) // 2
+                    middle_y = (obj["y1"] + obj["y2"]) // 2
+                    centroid = self.mapper.find_3d_point_from_pixel(
+                        middle_x, middle_y, distance_threshold
+                    )
+                    if centroid is None:
+                        warn = f"Missing {missing}/4 3D point(s) and fallback for object of type '{obj['type'].name}':"
+                        self.log.warning(warn)
+                    else:
+                        warn = f"Missing {missing}/4 3D point(s) for object of type '{obj['type'].name}', but fallback center point was found:"
+                        self.log.debug(warn)
+                    self.console(warn)
+                    if top_left is None:
+                        warn = f"\ttop-left     at: x={obj['x1']:4d}, y={obj['y1']:4d}"
+                        self.log.debug(warn)
+                        self.console(warn)
+                    if top_right is None:
+                        warn = f"\ttop-right    at: x={obj['x2']:4d}, y={obj['y1']:4d}"
+                        self.log.debug(warn)
+                        self.console(warn)
+                    if bottom_right is None:
+                        warn = f"\tbottom-right at: x={obj['x2']:4d}, y={obj['y2']:4d}"
+                        self.log.debug(warn)
+                        self.console(warn)
+                    if bottom_left is None:
+                        warn = f"\tbottom-left  at: x={obj['x1']:4d}, y={obj['y2']:4d}"
+                        self.log.debug(warn)
+                        self.console(warn)
+                    if centroid is None:
+                        warn = f"\tcenter       at: x={middle_x:4d}, y={middle_y:4d}"
+                        self.log.debug(warn)
+                        self.console(warn)
+                        continue
+                    pitch_deg = 0.0
+                    roll_deg = 0.0
+                else:  # All points found
+                    points_matrix = np.array([top_left, top_right, bottom_right, bottom_left])
+                    centroid = np.mean(points_matrix, axis=0)
+                    centered_points = points_matrix - centroid
+                    _, _, Vt = np.linalg.svd(centered_points)
+                    normal = Vt[2]
+                    # ensure that the normal vector always faces towards the origin
+                    if normal[2] < 0:
+                        normal *= -1
+                    pitch_rad = np.arcsin(normal[0])
+                    roll_rad = np.arctan2(normal[1], normal[2])
+                    # pitch  0°, roll  0° => normal parallel to z-axis (positive direction)
+                    # pitch 90°, roll  0° => normal parallel to x-axis (positive direction)
+                    # pitch  0°, roll 90° => normal parallel to y-axis (positive direction)
+                    pitch_deg = np.degrees(pitch_rad)
+                    roll_deg = np.degrees(roll_rad)
+                    if abs(pitch_deg) >= 30:  # noqa: PLR2004
+                        warn = f"For {obj['type'].name}: Pitch is large ({pitch_deg:.2f})! This could indicate an error"
+                        self.log.warning(warn)
+                        self.console(warn)
+                    if abs(roll_deg) >= 30:  # noqa: PLR2004
+                        warn = f"For {obj['type'].name}: Roll is large ({roll_deg:.2f})! This could indicate an error"
+                        self.log.warning(warn)
+                        self.console(warn)
+            else:  # Not computing angles
                 middle_x = (obj["x1"] + obj["x2"]) // 2
                 middle_y = (obj["y1"] + obj["y2"]) // 2
                 centroid = self.mapper.find_3d_point_from_pixel(
                     middle_x, middle_y, distance_threshold
                 )
+                pitch_deg = 0.0
+                roll_deg = 0.0
                 if centroid is None:
-                    warn = f"Missing {missing}/4 3D point(s) and fallback for object of type '{obj['type'].name}':"
+                    warn = f"Missing 3D point for object of type '{obj['type'].name}':"
                     self.log.warning(warn)
-                else:
-                    warn = f"Missing {missing}/4 3D point(s) for object of type '{obj['type'].name}', but fallback center point was found:"
-                    self.log.debug(warn)
-                self.console(warn)
-                if top_left is None:
-                    warn = f"\ttop-left     at: x={obj['x1']:4d}, y={obj['y1']:4d}"
-                    self.log.debug(warn)
                     self.console(warn)
-                if top_right is None:
-                    warn = f"\ttop-right    at: x={obj['x2']:4d}, y={obj['y1']:4d}"
-                    self.log.debug(warn)
-                    self.console(warn)
-                if bottom_right is None:
-                    warn = f"\tbottom-right at: x={obj['x2']:4d}, y={obj['y2']:4d}"
-                    self.log.debug(warn)
-                    self.console(warn)
-                if bottom_left is None:
-                    warn = f"\tbottom-left  at: x={obj['x1']:4d}, y={obj['y2']:4d}"
-                    self.log.debug(warn)
-                    self.console(warn)
-                if centroid is None:
                     warn = f"\tcenter       at: x={middle_x:4d}, y={middle_y:4d}"
                     self.log.debug(warn)
                     self.console(warn)
                     continue
-                pitch_deg = 0.0
-                roll_deg = 0.0
-            else:  # All points found
-                points_matrix = np.array([top_left, top_right, bottom_right, bottom_left])
-
-                centroid = np.mean(points_matrix, axis=0)
-
-                centered_points = points_matrix - centroid
-                _, _, Vt = np.linalg.svd(centered_points)
-
-                normal = Vt[2]
-
-                # ensure that the normal vector always faces towards the origin
-                if normal[2] < 0:
-                    normal *= -1
-
-                pitch_rad = np.arcsin(normal[0])
-                roll_rad = np.arctan2(normal[1], normal[2])
-
-                # pitch  0°, roll  0° => normal parallel to z-axis (positive direction)
-                # pitch 90°, roll  0° => normal parallel to x-axis (positive direction)
-                # pitch  0°, roll 90° => normal parallel to y-axis (positive direction)
-                pitch_deg = np.degrees(pitch_rad)
-                roll_deg = np.degrees(roll_rad)
-                if abs(pitch_deg) >= 30:  # noqa: PLR2004
-                    warn = f"For {obj['type'].name}: Pitch is large ({pitch_deg:.2f})! This could indicate an error"
-                    self.log.warning(warn)
-                    self.console(warn)
-                if abs(roll_deg) >= 30:  # noqa: PLR2004
-                    warn = f"For {obj['type'].name}: Roll is large ({roll_deg:.2f})! This could indicate an error"
-                    self.log.warning(warn)
-                    self.console(warn)
-
             assert centroid is not None  # noqa: S101
             analysis_results.append({
                 "x": round(float(centroid[0]), 2),
