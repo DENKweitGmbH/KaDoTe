@@ -39,6 +39,7 @@ class ObjectType(IntEnum):
     Unknown = -1
     Screw = 0
     Hexagon = 1
+    HexagonInner = 2
 
 
 OBJECT_TYPE_MAP: Final[dict[str, ObjectType]] = defaultdict(
@@ -46,6 +47,7 @@ OBJECT_TYPE_MAP: Final[dict[str, ObjectType]] = defaultdict(
     {
         "SCHRAUBE": ObjectType.Screw,
         "SECHSKAN": ObjectType.Hexagon,
+        "INNENSEC": ObjectType.HexagonInner,
     },
 )
 
