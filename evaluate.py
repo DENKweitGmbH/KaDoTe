@@ -147,17 +147,16 @@ class PointCloudMapper:
             msg = "load_point_cloud(...) must be called before find_3d_point_from_pixel(...)"
             raise ValueError(msg)
 
-        # Find nearest points in 2D space
-        distances = np.linalg.norm(self.projected_points - [pixel_x, pixel_y], axis=1)
-        mask = distances < distance_threshold
+        pixel_position = np.array([pixel_x, pixel_y], dtype=np.float32)
 
-        if not np.any(mask):
+        # Find nearest points in 2D space
+        distances = np.linalg.norm(self.projected_points - pixel_position, axis=1)
+        closest_idx = np.argmin(distances)
+
+        if distances[closest_idx] > distance_threshold:
             return None
 
-        # Return closest 3D point in camera Z-axis
-        valid_indices = np.where(mask)[0]
-        closest_idx = valid_indices[np.argmin(self.z_depths[valid_indices])]
-        return self.point_cloud[closest_idx]  # type: ignore[no-any-return]
+        return self.point_cloud[closest_idx] # type: ignore[no-any-return]
 
 
 class Libdenk:
