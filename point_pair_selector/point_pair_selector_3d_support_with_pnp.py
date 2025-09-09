@@ -1824,6 +1824,7 @@ class PointPairSelector:
     def save_cam_pos_data(self) -> None:
         calibration_data_path = "camera_calibration.json"
         camera_position_data_output_path = "camera_position.json"
+        test_image_output_path = "projection_test.png"
 
         image_points = []
         object_points = []
@@ -1842,6 +1843,19 @@ class PointPairSelector:
             object_points_np,
             calibration_data_path,
             camera_position_data_output_path,
+        )
+
+        img_a_cv = np.array(self.image_a.convert("RGB"))
+        img_a_cv = cv2.cvtColor(img_a_cv, cv2.COLOR_RGB2BGR)
+
+        save_position_test_image(
+            img_a_cv,
+            self.point_cloud_data_b,
+            calibration_data_path,
+            camera_position_data_output_path,
+            self.pc_b_x_min_val.get(),
+            self.pc_b_x_max_val.get(),
+            test_image_output_path
         )
 
     # --- Alignment Visualization ---
